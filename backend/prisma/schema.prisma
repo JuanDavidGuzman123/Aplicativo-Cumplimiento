@@ -1,0 +1,258 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  ANALYST
+}
+
+enum CounterpartyStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum FollowUpStatus {
+  DRAFT
+  FINALIZED
+}
+
+enum NotificationType {
+  D30
+  D15
+  DUE
+  OVERDUE
+}
+
+enum AnnualNotificationType {
+  ANNUAL_D15
+  ANNUAL_D10
+  ANNUAL_D5
+}
+
+enum ImportStatus {
+  PREVIEW
+  CONFIRMED
+  FAILED
+}
+
+enum AnnualStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(ANALYST)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  followUps                 FollowUp[]               @relation("FollowUpResponsible")
+  archivedCounterparties    Counterparty[]           @relation("CounterpartyArchivedBy")
+  reactivatedCounterparties Counterparty[]           @relation("CounterpartyReactivatedBy")
+  documents                 Document[]               @relation("DocumentUploadedBy")
+  notificationReads         NotificationRead[]
+  annualNotificationReads   AnnualNotificationRead[]
+  importBatches             ImportBatch[]            @relation("ImportUploadedBy")
+  auditLogs                 AuditLog[]
+}
+
+model Subprocess {
+  id             String         @id @default(uuid())
+  name           String         @unique
+  description    String?
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  counterparties Counterparty[]
+}
+
+model Counterparty {
+  id                 String             @id @default(uuid())
+  nit                String             @unique
+  nitNormalized      String             @unique
+  businessName       String
+  observations       String?            @db.Text
+  subprocessId       String
+  subprocess         Subprocess         @relation(fields: [subprocessId], references: [id], onDelete: Restrict)
+  status             CounterpartyStatus @default(ACTIVE)
+  registrationDate   DateTime           @default(now()) @db.Date
+  lastFollowUpDate   DateTime?          @db.Date
+  nextFollowUpDate   DateTime?          @db.Date
+  archivedAt         DateTime?
+  archivedById       String?
+  archivedBy         User?              @relation("CounterpartyArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  archiveReason      String?            @db.Text
+  reactivatedAt      DateTime?
+  reactivatedById    String?
+  reactivatedBy      User?              @relation("CounterpartyReactivatedBy", fields: [reactivatedById], references: [id], onDelete: SetNull)
+  reactivationReason String?            @db.Text
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  followUps     FollowUp[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([subprocessId])
+  @@index([nextFollowUpDate])
+  @@index([businessName])
+}
+
+model AnnualCounterparty {
+  id                         String       @id @default(uuid())
+  code                       String
+  codeNormalized             String       @unique
+  businessName               String
+  status                     AnnualStatus @default(ACTIVE)
+  requiresSemiannualFollowUp Boolean?
+  filingDate                 DateTime?    @db.Date
+  filingYear                 Int?
+  dueDiligenceType           String?
+  observations               String?      @db.Text
+  sourceFileName             String?
+  createdAt                  DateTime     @default(now())
+  updatedAt                  DateTime     @updatedAt
+
+  notifications AnnualNotification[]
+
+  @@index([status])
+  @@index([filingDate])
+  @@index([filingYear])
+  @@index([businessName])
+  @@index([requiresSemiannualFollowUp])
+}
+
+model FollowUp {
+  id                String         @id @default(uuid())
+  counterpartyId    String
+  counterparty      Counterparty   @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  performedAt       DateTime       @db.Date
+  responsibleUserId String
+  responsibleUser   User           @relation("FollowUpResponsible", fields: [responsibleUserId], references: [id], onDelete: Restrict)
+  result            String?        @db.Text
+  observations      String?        @db.Text
+  status            FollowUpStatus @default(DRAFT)
+  finalizedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  documents Document[]
+
+  @@index([counterpartyId, performedAt])
+  @@index([status])
+  @@index([responsibleUserId])
+}
+
+model Document {
+  id           String   @id @default(uuid())
+  followUpId   String
+  followUp     FollowUp @relation(fields: [followUpId], references: [id], onDelete: Restrict)
+  originalName String
+  storedName   String   @unique
+  mimeType     String
+  size         Int
+  storagePath  String
+  uploadedById String
+  uploadedBy   User     @relation("DocumentUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+
+  @@index([followUpId])
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  counterpartyId String
+  counterparty   Counterparty     @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  type           NotificationType
+  message        String           @db.Text
+  scheduledDate  DateTime         @db.Date
+  createdAt      DateTime         @default(now())
+
+  reads NotificationRead[]
+
+  @@unique([counterpartyId, type, scheduledDate])
+  @@index([scheduledDate])
+}
+
+model NotificationRead {
+  notificationId String
+  userId         String
+  readAt         DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, userId])
+  @@index([userId])
+}
+
+model AnnualNotification {
+  id                   String                 @id @default(uuid())
+  annualCounterpartyId String
+  annualCounterparty   AnnualCounterparty     @relation(fields: [annualCounterpartyId], references: [id], onDelete: Restrict)
+  type                 AnnualNotificationType
+  message              String                 @db.Text
+  scheduledDate        DateTime               @db.Date
+  createdAt            DateTime               @default(now())
+
+  reads AnnualNotificationRead[]
+
+  @@unique([annualCounterpartyId, type, scheduledDate])
+  @@index([scheduledDate])
+}
+
+model AnnualNotificationRead {
+  annualNotificationId String
+  userId               String
+  readAt               DateTime           @default(now())
+  notification         AnnualNotification @relation(fields: [annualNotificationId], references: [id], onDelete: Cascade)
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([annualNotificationId, userId])
+  @@index([userId])
+}
+
+model ImportBatch {
+  id            String       @id @default(uuid())
+  fileName      String
+  uploadedById  String
+  uploadedBy    User         @relation("ImportUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  totalRows     Int          @default(0)
+  validRows     Int          @default(0)
+  errorRows     Int          @default(0)
+  importedRows  Int          @default(0)
+  status        ImportStatus @default(PREVIEW)
+  columnMapping Json?
+  previewData   Json?
+  resultSummary Json?
+  errorDetails  Json?
+  confirmedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status])
+  @@index([uploadedById])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
