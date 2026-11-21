@@ -5,6 +5,7 @@ import type {
   ExternalDataStatus,
   ExternalDueListResponse,
   ExternalListParams,
+  ExternalReportMetric,
   ExternalStreamEvent,
   ExternalSummary,
 } from '../types/external-data'
@@ -54,6 +55,34 @@ export async function syncExternalData(): Promise<ExternalDataStatus> {
     '/external-data/refresh',
   )
   return data
+}
+
+export async function downloadExternalReport(
+  metric: ExternalReportMetric,
+): Promise<void> {
+  const response = await api.get<Blob>(
+    `/external-data/reports/${metric}`,
+    { responseType: 'blob' },
+  )
+  const disposition = String(
+    response.headers['content-disposition'] ?? '',
+  )
+  const fileName =
+    disposition.match(/filename="?([^";]+)"?/)?.[1] ??
+    `reporte-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
+  const url = URL.createObjectURL(response.data)
+  const anchor = document.createElement('a')
+
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+export async function downloadPendingActiveReport(): Promise<void> {
+  await downloadExternalReport('pending-active')
 }
 
 export function subscribeExternalEvents(options: {

@@ -18,6 +18,11 @@ enum Environment {
   Test = 'test',
 }
 
+enum ExternalDataSource {
+  Graph = 'graph',
+  File = 'file',
+}
+
 class EnvironmentVariables {
   @IsEnum(Environment)
   NODE_ENV: Environment = Environment.Development;
@@ -99,6 +104,14 @@ class EnvironmentVariables {
   @IsOptional()
   EXTERNAL_DATA_ENABLED = false;
 
+  @IsEnum(ExternalDataSource)
+  @IsOptional()
+  EXTERNAL_DATA_SOURCE = ExternalDataSource.Graph;
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_WORKBOOK_PATH = '';
+
   @IsString()
   @IsOptional()
   MICROSOFT_TENANT_ID = '';
@@ -110,6 +123,10 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   MICROSOFT_CLIENT_SECRET = '';
+
+  @IsString()
+  @IsOptional()
+  MICROSOFT_REFRESH_TOKEN = '';
 
   @IsString()
   @IsOptional()

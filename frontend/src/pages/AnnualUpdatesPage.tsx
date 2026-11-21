@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   CalendarClock,
   CheckCircle2,
+  Download,
   Loader2,
   RefreshCw,
   Search,
@@ -13,13 +14,19 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Badge, type BadgeTone } from '../components/Badge'
 import { ExternalDataStatusBadge } from '../components/ExternalDataStatusBadge'
 import { Pagination } from '../components/Pagination'
 import { useExternalDataEvents } from '../hooks/useExternalDataEvents'
 import {
+  downloadExternalReport,
   getExternalSummary,
   getExternalUpdates,
   getExternalUpdatesDue,
@@ -31,6 +38,7 @@ import type {
   ExternalListParams as AnnualUpdateListParams,
   ExternalAnnualListResponse as AnnualUpdateListResponse,
   ExternalReminderType as AnnualReminderType,
+  ExternalReportMetric,
   ExternalSummary as AnnualUpdateSummary,
   ExternalUpdateFilter as AnnualUpdateFilter,
   ExternalUpdateSituation as AnnualUpdateSituation,
@@ -46,6 +54,22 @@ import {
 
 const PAGE_SIZE = 15
 const DUE_PAGE_SIZE = 10
+
+const reportLabels: Record<ExternalReportMetric, string> = {
+  active: 'Reporte activos',
+  inactive: 'Reporte inactivos',
+  'updated-this-year': 'Reporte actualizados',
+  'pending-active': 'Reporte pendientes',
+  'pending-inactive': 'Pendientes inactivos',
+  'follow-up': 'Reporte seguimiento',
+  'updates-due': 'Reporte vencimientos',
+}
+
+const sectionClass =
+  'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm'
+
+const sectionHeaderClass =
+  'flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between'
 
 const annualStatusLabels: Record<AnnualStatus, string> = {
   ACTIVE: 'Activo',
@@ -98,6 +122,8 @@ const annualReminderLabels: Record<
   ANNUAL_D15: '15 días',
   ANNUAL_D10: '10 días',
   ANNUAL_D5: '5 días',
+  ANNUAL_D3: '3 días',
+  ANNUAL_D1: '1 día',
 }
 
 type StatCard = {
@@ -106,6 +132,7 @@ type StatCard = {
   hint: string
   icon: LucideIcon
   iconClass: string
+  reports?: ExternalReportMetric[]
 }
 
 function formatFollowUp(value: boolean | null): string {
@@ -133,7 +160,7 @@ function formatDays(days: number | null): string {
 }
 
 export function AnnualUpdatesPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const codeFromNotification = searchParams.get('code') ?? ''
   const [fallbackYear] = useState(() =>
     new Date().getFullYear(),
@@ -165,7 +192,8 @@ export function AnnualUpdatesPage() {
     codeFromNotification,
   )
   const [filters, setFilters] = useState<AnnualUpdateListParams>({
-    search: codeFromNotification,
+    code: codeFromNotification || undefined,
+    search: '',
     status: '',
     annualStatus: '',
     requiresSemiannualFollowUp: '',
@@ -173,6 +201,18 @@ export function AnnualUpdatesPage() {
 
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState('')
+
+  const clearNotificationCode = () => {
+    if (!codeFromNotification) {
+      return
+    }
+
+    const next = new URLSearchParams(searchParams)
+    next.delete('code')
+    setSearchParams(next, { replace: true })
+  }
 
   const refreshSummary = () => {
     setSummaryLoading(true)
@@ -234,12 +274,24 @@ export function AnnualUpdatesPage() {
     }
   }, [summaryRefreshKey])
 
+  const effectiveListParams = useMemo(
+    () =>
+      codeFromNotification
+        ? {
+            ...filters,
+            code: codeFromNotification,
+            search: '',
+            page: 1,
+          }
+        : { ...filters, page },
+    [codeFromNotification, filters, page],
+  )
+
   useEffect(() => {
     let active = true
 
     getExternalUpdates({
-      ...filters,
-      page,
+      ...effectiveListParams,
       pageSize: PAGE_SIZE,
     })
       .then((data) => {
@@ -270,7 +322,7 @@ export function AnnualUpdatesPage() {
     return () => {
       active = false
     }
-  }, [filters, page, listRefreshKey, setExternalStatus])
+  }, [effectiveListParams, listRefreshKey, setExternalStatus])
 
   useEffect(() => {
     let active = true
@@ -309,8 +361,36 @@ export function AnnualUpdatesPage() {
     }
   }, [duePage, dueRefreshKey, setExternalStatus])
 
+  useEffect(() => {
+    if (!codeFromNotification) {
+      return
+    }
+
+    document
+      .getElementById('puntos-anuales')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [codeFromNotification])
+
   const currentYear = summary?.currentYear ?? fallbackYear
   const minimumDueYear = currentYear - 1
+
+  const handleReport = async (metric: ExternalReportMetric) => {
+    setReportLoading(true)
+    setReportError('')
+
+    try {
+      await downloadExternalReport(metric)
+    } catch (reportFailure) {
+      setReportError(
+        getApiErrorMessage(
+          reportFailure,
+          'No fue posible generar el reporte solicitado',
+        ),
+      )
+    } finally {
+      setReportLoading(false)
+    }
+  }
 
   const statCards: StatCard[] = summary
     ? [
@@ -320,6 +400,7 @@ export function AnnualUpdatesPage() {
           hint: `${summary.totals.inactive} inactivos`,
           icon: Building2,
           iconClass: 'bg-slate-900 text-white',
+          reports: ['active'],
         },
         {
           label: 'Puntos de venta inactivos',
@@ -327,6 +408,7 @@ export function AnnualUpdatesPage() {
           hint: 'Solo para conteo',
           icon: Ban,
           iconClass: 'bg-slate-100 text-slate-600',
+          reports: ['inactive', 'pending-inactive'],
         },
         {
           label: `Actualizados en ${currentYear}`,
@@ -334,31 +416,36 @@ export function AnnualUpdatesPage() {
           hint: `${summary.annual.active.updatedThisYear} activos / ${summary.annual.inactive.updatedThisYear} inactivos`,
           icon: CalendarCheck,
           iconClass: 'bg-emerald-50 text-emerald-600',
+          reports: ['updated-this-year'],
         },
-        {
-          label: 'Pendientes de actualizar',
-          value: summary.annual.active.pendingUpdate,
-          hint: `Diligenciamiento desde ${minimumDueYear}`,
-          icon: CalendarClock,
-          iconClass: 'bg-amber-50 text-amber-600',
-        },
+          {
+            label: 'Pendientes de actualizar',
+            value: summary.annual.active.pendingUpdate,
+            hint: `Diligenciamiento desde ${minimumDueYear}`,
+            icon: CalendarClock,
+            iconClass: 'bg-amber-50 text-amber-600',
+            reports: ['pending-active'],
+          },
         {
           label: 'Contrapartes en seguimiento',
           value: summary.semiannual.totalWithFollowUp,
           hint: `${summary.semiannual.activeWithFollowUp} activos / ${summary.semiannual.inactiveWithFollowUp} inactivos`,
           icon: Users,
           iconClass: 'bg-blue-50 text-blue-600',
+          reports: ['follow-up'],
         },
       ]
     : []
 
   const handleFilterSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    clearNotificationCode()
     setListLoading(true)
     setPage(1)
     setFilters((current) => ({
       ...current,
-      search: searchDraft.trim(),
+      code: undefined,
+      search: (codeFromNotification || searchDraft).trim(),
     }))
   }
 
@@ -382,10 +469,12 @@ export function AnnualUpdatesPage() {
   }
 
   const handleClearFilters = () => {
+    clearNotificationCode()
     setListLoading(true)
     setSearchDraft('')
     setPage(1)
     setFilters({
+      code: undefined,
       search: '',
       status: '',
       annualStatus: '',
@@ -414,249 +503,148 @@ export function AnnualUpdatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Actualización anual
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            Consulte el estado de la actualización anual de los puntos
-            de venta y sus vencimientos desde el libro externo. Este
-            proceso es independiente del seguimiento semestral.
-          </p>
-        </div>
-        <ExternalDataStatusBadge
-          status={externalStatus}
-          connected={connected}
-          syncing={syncing}
-          onSync={() => {
-            void handleManualSync()
-          }}
-        />
-      </div>
-
-      {syncError && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <XCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{syncError}</span>
-        </div>
-      )}
-
-      {summaryError && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <XCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{summaryError}</span>
-        </div>
-      )}
-
-      {summaryLoading && !summary ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }, (_, index) => (
-            <div
-              key={index}
-              className="h-32 animate-pulse rounded-xl border border-slate-200 bg-white"
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {statCards.map(
-            ({ label, value, hint, icon: Icon, iconClass }) => (
-              <div
-                key={label}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <span
-                  className={`flex size-9 items-center justify-center rounded-lg ${iconClass}`}
-                >
-                  <Icon className="size-4" />
-                </span>
-                <p className="mt-4 text-2xl font-semibold text-slate-900">
-                  {value}
-                </p>
-                <p className="mt-1 text-sm font-medium text-slate-700">
-                  {label}
-                </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {hint}
-                </p>
-              </div>
-            ),
-          )}
-        </div>
-      )}
-
-      {summary && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          <p className="font-medium">
-            Corte al {formatDate(summary.businessDate)} · Año{' '}
-            {summary.currentYear}
-          </p>
-          <p className="mt-1 text-xs">
-            Los puntos de venta inactivos se incluyen únicamente en
-            los conteos. Los pendientes corresponden a puntos de
-            venta activos sin actualización registrada en el año.
-          </p>
-        </div>
-      )}
-
-      {dueError && (
-        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <XCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{dueError}</span>
-        </div>
-      )}
-
-      <section className="rounded-xl border border-amber-200 bg-white">
-        <div className="flex flex-col gap-3 border-b border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
-              <CalendarClock className="size-5" />
-            </span>
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">
-                Actualizaciones por vencer y vencidas
-              </h2>
-              <p className="mt-1 text-xs text-slate-600">
-                Solo contrapartes activas con diligenciamiento desde{' '}
-                {minimumDueYear}. La fecha límite es la fecha de
-                diligenciamiento más un año; los recordatorios se envían
-                a los 15, 10 y 5 días.
-              </p>
-            </div>
+    <div className="mx-auto max-w-6xl space-y-8 pb-10">
+      <section className="space-y-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Actualización anual
+            </h1>
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              Consulte el estado de la actualización anual de los puntos
+              de venta y sus vencimientos desde el libro externo. Este
+              proceso es independiente del seguimiento semestral.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={refreshDue}
-            disabled={dueLoading}
-            className={secondaryButtonClass}
-          >
-            <RefreshCw
-              className={`size-4 ${
-                dueLoading ? 'animate-spin' : ''
-              }`}
-            />
-            Actualizar
-          </button>
+          <ExternalDataStatusBadge
+            status={externalStatus}
+            connected={connected}
+            syncing={syncing}
+            onSync={() => {
+              void handleManualSync()
+            }}
+          />
         </div>
 
-        {due && (
-          <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-5 lg:grid-cols-4">
-            {[
-              [
-                'Necesitan actualización',
-                due.summary.needsUpdate,
-              ],
-              ['Vencidas', due.summary.overdue],
-              ['Vencen hoy', due.summary.dueToday],
-              ['Por vencer', due.summary.upcoming],
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-lg bg-slate-50 p-3"
-              >
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="mt-1 text-xl font-semibold text-slate-900">
-                  {value}
-                </p>
-              </div>
-            ))}
+        {syncError && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{syncError}</span>
           </div>
         )}
 
-        {dueLoading && !due ? (
-          <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            Cargando vencimientos anuales...
+        {summaryError && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{summaryError}</span>
           </div>
-        ) : !due || due.data.length === 0 ? (
-          <div className="p-10 text-center">
-            <CheckCircle2 className="mx-auto size-8 text-emerald-500" />
-            <p className="mt-3 text-sm font-medium text-slate-700">
-              No hay vencimientos anuales próximos
-            </p>
-            <p className="mt-1 text-sm text-slate-500">
-              Las contrapartes activas con fecha registrada
-              aparecerán aquí 15 días antes del vencimiento.
-            </p>
+        )}
+
+        {summaryLoading && !summary ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div
+                key={index}
+                className="h-32 animate-pulse rounded-xl border border-slate-200 bg-white"
+              />
+            ))}
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">Fecha límite</th>
-                    <th className="px-4 py-3">Días</th>
-                    <th className="px-4 py-3">Situación</th>
-                    <th className="px-4 py-3">Alerta</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {due.data.map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {row.code}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {row.businessName}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {formatDate(row.dueDate)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {formatDays(row.daysUntilDue)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          tone={
-                            annualSituationTones[row.situation]
-                          }
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {statCards.map(
+              ({
+                label,
+                value,
+                hint,
+                icon: Icon,
+                iconClass,
+                reports,
+              }) => (
+                <div
+                  key={label}
+                  className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                >
+                  <span
+                    className={`flex size-9 items-center justify-center rounded-lg ${iconClass}`}
+                  >
+                    <Icon className="size-4" />
+                  </span>
+                  <p className="mt-4 text-2xl font-semibold text-slate-900">
+                    {value}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-700">
+                    {label}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {hint}
+                  </p>
+                  {reports && (
+                    <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1">
+                      {reports.map((metric) => (
+                        <button
+                          key={metric}
+                          type="button"
+                          onClick={() => {
+                            void handleReport(metric)
+                          }}
+                          disabled={reportLoading}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 transition hover:text-slate-900 disabled:opacity-60"
                         >
-                          {
-                            annualSituationLabels[
-                              row.situation
-                            ]
-                          }
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-600">
-                        {row.reminderType
-                          ? annualReminderLabels[row.reminderType]
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              page={due.meta.page}
-              totalPages={due.meta.totalPages}
-              total={due.meta.total}
-              onPageChange={(nextPage) => {
-                setDueLoading(true)
-                setDuePage(nextPage)
-              }}
-            />
-          </>
+                          <Download
+                            className={`size-3.5 ${
+                              reportLoading ? 'animate-pulse' : ''
+                            }`}
+                          />
+                          {reportLoading
+                            ? 'Generando...'
+                            : reportLabels[metric]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
+        )}
+
+        {reportError && (
+          <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{reportError}</span>
+          </div>
+        )}
+
+        {summary && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <p className="font-medium">
+              Corte al {formatDate(summary.businessDate)} · Año{' '}
+              {summary.currentYear}
+            </p>
+            <p className="mt-1 text-xs">
+              Los puntos de venta inactivos se incluyen únicamente en
+              los conteos. Los pendientes corresponden a puntos de
+              venta activos sin actualización registrada en el año.
+            </p>
+          </div>
         )}
       </section>
 
-
-      <section className="rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              Puntos de venta anuales
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Consulte el estado anual y el seguimiento registrado
-              en el libro externo.
-            </p>
+      <section id="puntos-anuales" className={`${sectionClass} scroll-mt-6`}>
+        <div className={sectionHeaderClass}>
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+              <Building2 className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Puntos de venta anuales
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Consulte el estado anual y el seguimiento registrado
+                en el libro externo.
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -686,7 +674,7 @@ export function AnnualUpdatesPage() {
               <input
                 id="annual-search"
                 type="search"
-                value={searchDraft}
+                value={codeFromNotification || searchDraft}
                 onChange={(event) =>
                   setSearchDraft(event.target.value)
                 }
@@ -833,7 +821,14 @@ export function AnnualUpdatesPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {list.data.map((row) => (
-                    <tr key={row.id}>
+                    <tr
+                      key={row.id}
+                      className={
+                        row.code === codeFromNotification
+                          ? 'bg-blue-50/60'
+                          : undefined
+                      }
+                    >
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {row.code}
                       </td>
@@ -905,7 +900,169 @@ export function AnnualUpdatesPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={sectionClass}>
+        <div className="flex flex-col gap-3 border-b border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
+              <CalendarClock className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">
+                Actualizaciones vencidas y por vencer
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Solo contrapartes activas con diligenciamiento desde{' '}
+                {minimumDueYear}. La fecha límite es la fecha de
+                diligenciamiento más un año; los recordatorios se envían
+                a los 3 y 1 días.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void handleReport('updates-due')
+              }}
+              disabled={reportLoading}
+              className={secondaryButtonClass}
+            >
+              <Download
+                className={`size-4 ${
+                  reportLoading ? 'animate-pulse' : ''
+                }`}
+              />
+              {reportLoading ? 'Generando...' : 'Descargar reporte'}
+            </button>
+            <button
+              type="button"
+              onClick={refreshDue}
+              disabled={dueLoading}
+              className={secondaryButtonClass}
+            >
+              <RefreshCw
+                className={`size-4 ${
+                  dueLoading ? 'animate-spin' : ''
+                }`}
+              />
+              Actualizar
+            </button>
+          </div>
+        </div>
+
+        {dueError && (
+          <div className="m-5 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{dueError}</span>
+          </div>
+        )}
+
+        {due && (
+          <div className="grid grid-cols-2 gap-3 border-b border-slate-200 p-5 lg:grid-cols-4">
+            {[
+              [
+                'Necesitan actualización',
+                due.summary.needsUpdate,
+              ],
+              ['Vencidas', due.summary.overdue],
+              ['Vencen hoy', due.summary.dueToday],
+              ['Por vencer', due.summary.upcoming],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg bg-slate-50 p-3"
+              >
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="mt-1 text-xl font-semibold text-slate-900">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {dueLoading && !due ? (
+          <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
+            <Loader2 className="size-4 animate-spin" />
+            Cargando vencimientos anuales...
+          </div>
+        ) : !due || due.data.length === 0 ? (
+          <div className="p-10 text-center">
+            <CheckCircle2 className="mx-auto size-8 text-emerald-500" />
+            <p className="mt-3 text-sm font-medium text-slate-700">
+              No hay vencimientos anuales próximos
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Las contrapartes activas con fecha registrada
+              aparecerán aquí cuando se acerque su vencimiento.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Código</th>
+                    <th className="px-4 py-3">Nombre</th>
+                    <th className="px-4 py-3">Fecha límite</th>
+                    <th className="px-4 py-3">Días</th>
+                    <th className="px-4 py-3">Situación</th>
+                    <th className="px-4 py-3">Alerta</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {due.data.map((row) => (
+                    <tr key={row.id}>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {row.code}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {row.businessName}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatDate(row.dueDate)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatDays(row.daysUntilDue)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          tone={
+                            annualSituationTones[row.situation]
+                          }
+                        >
+                          {
+                            annualSituationLabels[
+                              row.situation
+                            ]
+                          }
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {row.reminderType
+                          ? annualReminderLabels[row.reminderType]
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={due.meta.page}
+              totalPages={due.meta.totalPages}
+              total={due.meta.total}
+              onPageChange={(nextPage) => {
+                setDueLoading(true)
+                setDuePage(nextPage)
+              }}
+            />
+          </>
+        )}
+      </section>
+
+      <section className={`${sectionClass} p-5`}>
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
             <ArrowRight className="size-4" />

@@ -76,25 +76,19 @@ describe('annual dates', () => {
     expect(due?.toISOString()).toBe('2025-02-28T00:00:00.000Z')
   })
 
-  it('maps only the 15, 10 and 5 day windows', () => {
-    expect(resolveAnnualReminderType(16)).toBeNull()
-    expect(resolveAnnualReminderType(15)).toBe(
-      AnnualNotificationType.ANNUAL_D15,
+  it('maps only the 3 and 1 day windows', () => {
+    expect(resolveAnnualReminderType(4)).toBeNull()
+    expect(resolveAnnualReminderType(3)).toBe(
+      AnnualNotificationType.ANNUAL_D3,
     )
-    expect(resolveAnnualReminderType(11)).toBe(
-      AnnualNotificationType.ANNUAL_D15,
+    expect(resolveAnnualReminderType(2)).toBe(
+      AnnualNotificationType.ANNUAL_D3,
     )
-    expect(resolveAnnualReminderType(10)).toBe(
-      AnnualNotificationType.ANNUAL_D10,
-    )
-    expect(resolveAnnualReminderType(6)).toBe(
-      AnnualNotificationType.ANNUAL_D10,
-    )
-    expect(resolveAnnualReminderType(5)).toBe(
-      AnnualNotificationType.ANNUAL_D5,
+    expect(resolveAnnualReminderType(1)).toBe(
+      AnnualNotificationType.ANNUAL_D1,
     )
     expect(resolveAnnualReminderType(0)).toBe(
-      AnnualNotificationType.ANNUAL_D5,
+      AnnualNotificationType.ANNUAL_D1,
     )
     expect(resolveAnnualReminderType(-1)).toBeNull()
   })
@@ -111,33 +105,33 @@ describe('AnnualNotificationsService', () => {
     prisma.annualCounterparty.findMany.mockResolvedValue([
       {
         id: 'row-1',
-        businessName: 'Empresa 15',
-        filingDate: filingDateForDue(12),
-      },
-      {
-        id: 'row-2',
-        businessName: 'Empresa 10',
-        filingDate: filingDateForDue(7),
-      },
-      {
-        id: 'row-3',
-        businessName: 'Empresa 5',
+        businessName: 'Empresa 3',
         filingDate: filingDateForDue(3),
       },
       {
-        id: 'row-4',
+        id: 'row-2',
+        businessName: 'Empresa 1',
+        filingDate: filingDateForDue(1),
+      },
+      {
+        id: 'row-3',
         businessName: 'Empresa futura',
         filingDate: filingDateForDue(30),
       },
+      {
+        id: 'row-4',
+        businessName: 'Empresa 10',
+        filingDate: filingDateForDue(10),
+      },
     ])
     prisma.annualNotification.createMany.mockResolvedValue({
-      count: 3,
+      count: 2,
     })
 
     const service = createService(prisma)
     const result = await service.generateDaily()
 
-    expect(result).toEqual({ evaluated: 4, created: 3 })
+    expect(result).toEqual({ evaluated: 4, created: 2 })
     expect(prisma.annualCounterparty.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -157,14 +151,13 @@ describe('AnnualNotificationsService', () => {
 
     expect(data.map((item: { type: string }) => item.type)).toEqual(
       [
-        AnnualNotificationType.ANNUAL_D15,
-        AnnualNotificationType.ANNUAL_D10,
-        AnnualNotificationType.ANNUAL_D5,
+        AnnualNotificationType.ANNUAL_D3,
+        AnnualNotificationType.ANNUAL_D1,
       ],
     )
     expect(data[0]).toMatchObject({
       annualCounterpartyId: 'row-1',
-      scheduledDate: annualDueDate(filingDateForDue(12)),
+      scheduledDate: annualDueDate(filingDateForDue(3)),
     })
   })
 })

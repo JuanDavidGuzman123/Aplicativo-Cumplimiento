@@ -23,7 +23,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 | 9. Pruebas y seguridad | Completada |
 | 10. Despliegue | Preparada (ejecución pendiente en servidor) |
 | Actualización anual (módulo adicional) | Completada |
-| Fuente anual externa (Microsoft Graph, webhook y SSE) | Implementada (pendiente de credenciales reales y URL pública) |
+| Fuente anual externa (Microsoft Graph o archivo local, webhook y SSE) | Implementada; modo local activo y Graph pendiente de consentimiento |
 
 ### Entorno configurado (Fase 2)
 
@@ -100,23 +100,23 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - `GET /annual-updates/summary` (autenticado) devuelve totales de activos/inactivos, actualizados en el año y pendientes activos. Los pendientes consideran solo diligenciamientos desde el año anterior (`currentYear - 1`; 2025 en este corte); 2024 o antes quedan fuera. Los inactivos solo se incluyen en los conteos.
 - `GET /annual-updates` (autenticado) lista con búsqueda, estado, situación anual y seguimiento registrado, con paginación, e incluye fecha, año, tipo de debida diligencia y observaciones completas.
 - `GET /annual-updates/updates-due` (autenticado) lista contrapartes activas con diligenciamiento desde el año anterior (`currentYear - 1`; 2025 en este corte): vencidas, de hoy y próximas a 15 días, ordenadas por urgencia; devuelve conteos de cada grupo y la alerta correspondiente. Las filas de 2024 o antes y sin fecha quedan fuera.
-- La fecha límite es `filingDate + 1 año`, con ajuste del 29 de febrero al 28. Los recordatorios `ANNUAL_D15` (15–11 días), `ANNUAL_D10` (10–6 días) y `ANNUAL_D5` (5–0 días) se generan con `skipDuplicates` por `(annualCounterpartyId, type, scheduledDate)`.
+- La fecha límite es `filingDate + 1 año`, con ajuste del 29 de febrero al 28. Los recordatorios `ANNUAL_D3` (3–2 días) y `ANNUAL_D1` (1–0 días) se generan con `skipDuplicates` por `(annualCounterpartyId, type, scheduledDate)`.
 - `POST /annual-updates/import/preview` y `POST /annual-updates/import/confirm` (solo ADMIN) reciben un `.xlsx`/`.xlsm` y detectan automáticamente código de punto de venta, nombre, estado (A/I), fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones; validan sin guardar antes de confirmar. La confirmación es idempotente por `codeNormalized` y registra `ANNUAL_UPDATES_IMPORTED`. Si faltan columnas obligatorias, la vista previa devuelve los encabezados detectados, sin interfaz de mapeo manual. Cuando un código se repite, se conserva la fila con la fecha/año más reciente y las anteriores se marcan como `IGNORED` (“Histórico omitido”), fuera de los errores.
 - La columna de seguimiento se almacena y se muestra para consulta con tres estados: Sí, No y vacío. Las celdas vacías de la base se conservan vacías y el indicador se denomina “Contrapartes en seguimiento”. No crea automáticamente registros en el módulo semestral. La sincronización Excel↔aplicativo queda para una fase posterior. La importación no elimina registros ausentes en el archivo.
-- La pantalla `/actualizacion-anual` (autenticados) muestra indicadores, filtros, tabla y, para ADMIN, carga, vista previa y confirmación con detección automática de columnas. El estado “pendiente” aplica solo a puntos de venta activos sin actualización en el año.
+- La pantalla `/actualizacion-anual` (autenticados) muestra indicadores, filtros, tabla, estado de la fuente y sincronización manual. La carga manual ya no forma parte de esta pantalla. El estado “pendiente” aplica solo a puntos de venta activos sin actualización en el año.
 
-### Fuente anual externa (Microsoft Graph)
+### Fuente anual externa (Microsoft Graph o archivo local)
 
 - La pantalla `/actualizacion-anual` dejó de consumir los endpoints de importación de `annual-updates` y usa exclusivamente el módulo `external-data`. La base anual PostgreSQL queda aislada: no se escribe en ella desde este flujo y no se envían datos de PostgreSQL al libro.
-- El libro es único y se identifica con `SHAREPOINT_DRIVE_ID` y `SHAREPOINT_ITEM_ID`. Se usa Microsoft Graph Workbook API sobre `driveItem`, sin SharePoint Lists y sin SDK de Microsoft; las solicitudes se hacen con `fetch` y OAuth client credentials.
-- La lectura prioriza `EXTERNAL_DATA_TABLE_NAME`; si no está o no existe, usa la primera tabla. Sin tablas, usa `EXTERNAL_DATA_WORKSHEET_NAME` o la primera hoja sobre el rango usado. Los encabezados se normalizan y se mapean con los alias anuales existentes o con un JSON explícito en `EXTERNAL_DATA_COLUMN_MAP`.
+- El libro es único. En modo `graph` se identifica con `SHAREPOINT_DRIVE_ID` y `SHAREPOINT_ITEM_ID` y se usa Microsoft Graph Workbook API sobre `driveItem`, sin SharePoint Lists y sin SDK de Microsoft; las solicitudes se hacen con `fetch` y OAuth. En modo `file` se lee el `.xlsx` indicado por `EXTERNAL_WORKBOOK_PATH` con ExcelJS, reutilizando `imports/excel-parser.ts`, sin Graph, suscripción ni webhook.
+- En modo `graph`, la lectura prioriza `EXTERNAL_DATA_TABLE_NAME`; si no está o no existe, usa la primera tabla. Sin tablas, usa `EXTERNAL_DATA_WORKSHEET_NAME` o la primera hoja sobre el rango usado. En modo `file` usa la hoja configurada o la primera del archivo local. Los encabezados se normalizan y se mapean con los alias anuales existentes o con un JSON explícito en `EXTERNAL_DATA_COLUMN_MAP`.
 - `ExternalAnnualMapperService` reutiliza normalizadores de `annual-updates`, omite filas inválidas, deduplica por `codeNormalized` conservando el año/fecha más reciente y trata `N/A`, `NA`, `no aplica`, `sin fecha`, `sin dato`, `-` y `--` como vacío mediante `common/utils/annual-values.ts`.
 - `ExternalDataCacheService` guarda el snapshot y el estado solo en memoria. Publica `ReplaySubject<ExternalStreamEvent>` con eventos `status`, `updated` y `error`. Si falla una recarga posterior, conserva el último snapshot y marca `stale`/`degraded`; si nunca hubo snapshot, marca `error`.
-- Endpoints: `GET /external-data`, `/summary`, `/updates-due`, `/status` y `/events` (SSE), más `POST /refresh`, todos autenticados. El webhook `GET|POST /external-data/webhook` es público solo para Graph: el `GET` devuelve `validationToken` y el `POST` valida `clientState`, deduplica notificaciones y aplica debounce antes de recargar.
+- Endpoints: `GET /external-data`, `/summary`, `/updates-due`, `/status` y `/events` (SSE), más `POST /refresh`, todos autenticados. El webhook `GET|POST /external-data/webhook` es público solo para Graph: el `GET` devuelve `validationToken` y el `POST` valida `clientState`, deduplica notificaciones y aplica debounce antes de recargar. En modo `file` el webhook no se registra.
 - El cliente React usa un hook con `fetch` streaming y header `Authorization` para SSE; `EventSource` no se usa porque no permite enviar el JWT. El badge muestra conexión, frescura, última actualización y error, y ofrece sincronización manual.
-- Las notificaciones de cambio no traen celdas: cada evento dispara una lectura completa del libro. `ExternalSubscriptionService` crea/renueva la suscripción con expiración de dos días, renovación cada hora y ventana de seis horas; `ExternalPollingService` es el respaldo cuando no hay webhook o la suscripción falla.
-- `EXTERNAL_DATA_ENABLED` es `false` por defecto. Se requieren credenciales de solo lectura (`Files.Read.All`, `Sites.Read.All` o `Sites.Selected` según el tenant), URLs/IDs del libro, URL pública base de la API y `clientState` de al menos 16 caracteres. Queda pendiente confirmar la suscripción app-only sobre `driveItem` con el tenant real.
-- Verificado con 55 pruebas unitarias en 16 archivos, build y lint en backend y frontend. La verificación real contra el tenant, el libro definitivo y un webhook HTTPS público queda pendiente de credenciales.
+- Las notificaciones de cambio no traen celdas: cada evento dispara una lectura completa del libro. En modo `graph`, `ExternalSubscriptionService` crea/renueva la suscripción con expiración de dos días, renovación cada hora y ventana de seis horas. En modo `file` la suscripción queda `disabled`; `ExternalPollingService` recarga según `EXTERNAL_FALLBACK_POLL_MS` (60 s por defecto) y también existe sincronización manual.
+- `EXTERNAL_DATA_ENABLED` es `false` por defecto. En modo `graph` se requieren credenciales de solo lectura (`Files.Read.All`, `Sites.Read.All` o `Sites.Selected` según el tenant), URLs/IDs del libro, URL pública base de la API y `clientState` de al menos 16 caracteres. En modo `file` solo se requiere `EXTERNAL_WORKBOOK_PATH` y no se usan credenciales de Microsoft. Graph queda pendiente de consentimiento de administrador.
+- Verificado con 58 pruebas unitarias en 17 archivos, build y lint en backend y frontend. El modo local se validó con `FR-SG-79`: 637 registros, 0 errores de mapeo y estado `connected`/`fresh`. Graph queda pendiente de consentimiento de administrador y de un webhook HTTPS público.
 
 ### Dashboard (Fase 8)
 
@@ -192,7 +192,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - **Frontend**: SPA React + Vite + TypeScript + Tailwind CSS + Lucide + React Router + Axios + React Hook Form + Zod. Consume la API REST y no contiene reglas de negocio.
 - **Backend**: NestJS + TypeScript estricto, API REST bajo el prefijo `/api`, validación con DTOs (`class-validator`/`class-transformer`), Prisma ORM y PostgreSQL como única base de datos.
 - **Archivos**: Multer guarda los documentos en `uploads/` con nombre UUID. No se sirven como estáticos: se descargan por un endpoint autenticado.
-- **Datos externos**: la fuente anual se lee de un único libro con Microsoft Graph; el snapshot vive solo en memoria y se publica por SSE autenticado. El webhook y el polling solo disparan recargas; nunca hay escritura en el libro ni transferencia hacia o desde PostgreSQL.
+- **Datos externos**: la fuente anual se lee de un único libro, con Microsoft Graph o desde un `.xlsx` local; el snapshot vive solo en memoria y se publica por SSE autenticado. El webhook (solo Graph) y el polling solo disparan recargas; nunca hay escritura en el libro ni transferencia hacia o desde PostgreSQL.
 - **Autenticación**: JWT de acceso (8 h por defecto) + bcrypt para contraseñas. Un guard valida el token y consulta el usuario para verificar que siga activo.
 - **Notificaciones**: tabla global + tabla de lecturas por usuario. Tarea diaria con `@nestjs/schedule`.
 - **Fechas**: se almacenan como `date` (sin hora) y se calculan con la zona `America/Bogota`.
@@ -212,7 +212,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 | `annual-notifications` | Generación diaria, listado y lectura por usuario de recordatorios anuales |
 | `imports` | Carga de Excel, mapeo de columnas, vista previa y confirmación transaccional |
 | `annual-updates` | Base anual independiente: importación por código, conteos, consulta y vencimientos |
-| `external-data` | Lectura de libro único vía Graph, caché en memoria, webhook, polling, REST y SSE para la pantalla anual |
+| `external-data` | Lectura de libro único vía Graph o archivo local, caché en memoria, webhook, polling, REST y SSE para la pantalla anual |
 | `dashboard` | Indicadores del calendario y listado paginado de contrapartes por atender |
 | `audit` | Registro y consulta del historial de acciones |
 | `prisma` | Cliente Prisma y ciclo de vida de la conexión |
@@ -231,7 +231,7 @@ Definido en `backend/prisma/schema.prisma`.
 | `Document` | Pertenece a un seguimiento; nombre original, nombre almacenado, MIME, tamaño y ruta |
 | `Notification` | Única por `(counterpartyId, type, scheduledDate)`; no se generan para archivadas |
 | `NotificationRead` | Clave compuesta `(notificationId, userId)` para el contador individual |
-| `AnnualNotification` | Única por `(annualCounterpartyId, type, scheduledDate)`; tipos `ANNUAL_D15`, `ANNUAL_D10` y `ANNUAL_D5` |
+| `AnnualNotification` | Única por `(annualCounterpartyId, type, scheduledDate)`; tipos `ANNUAL_D3` y `ANNUAL_D1` (los antiguos se conservan solo para historial) |
 | `AnnualNotificationRead` | Clave compuesta `(annualNotificationId, userId)` para el contador individual |
 | `ImportBatch` | Archivo(s), usuario, conteos, estado, mapeo y datos de vista previa |
 | `AnnualCounterparty` | `codeNormalized` único; estado ACTIVE/INACTIVE; seguimiento opcional Sí/No/vacío; fecha de diligenciamiento, año, tipo de debida diligencia y observaciones; archivo de origen |
@@ -303,7 +303,7 @@ Reglas de integridad:
 
 ### Notificaciones anuales (independientes)
 
-- Tipos: `ANNUAL_D15` (15–11 días antes), `ANNUAL_D10` (10–6 días antes) y `ANNUAL_D5` (5–0 días antes). No se crean alertas nuevas para fechas vencidas.
+- Tipos: `ANNUAL_D3` (3–2 días antes) y `ANNUAL_D1` (1–0 días antes). No se crean alertas nuevas para fechas vencidas.
 - Solo contrapartes anuales `ACTIVE` con `filingDate` desde el año anterior (`currentYear - 1`; 2025 en este corte). La fecha límite es `filingDate + 1 año`, ajustando el 29 de febrero al 28.
 - Generación al iniciar la aplicación, tarea diaria separada y nueva generación tras confirmar la importación anual; `skipDuplicates` evita duplicados.
 - `GET /annual-notifications` y `PATCH /annual-notifications/:id/read` usan `AnnualNotification` y `AnnualNotificationRead`, sin mezclarse con `Notification`/`NotificationRead`.

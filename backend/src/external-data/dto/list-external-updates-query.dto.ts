@@ -17,6 +17,14 @@ export class ListExternalUpdatesQueryDto {
     typeof value === 'string' ? value.trim() : value,
   )
   @IsOptional()
+  @IsString({ message: 'El código no es válido' })
+  @MaxLength(50, { message: 'El código es demasiado largo' })
+  code?: string
+
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsOptional()
   @IsString({ message: 'La búsqueda no es válida' })
   @MaxLength(150, { message: 'La búsqueda es demasiado larga' })
   search?: string

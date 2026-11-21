@@ -37,23 +37,15 @@ export function daysUntil(target: Date | null, today: Date): number | null {
 export function resolveAnnualReminderType(
   days: number | null,
 ): AnnualNotificationType | null {
-  if (days === null || days > 15) {
+  if (days === null || days > 3 || days < 0) {
     return null
   }
 
-  if (days > 10) {
-    return AnnualNotificationType.ANNUAL_D15
+  if (days > 1) {
+    return AnnualNotificationType.ANNUAL_D3
   }
 
-  if (days > 5) {
-    return AnnualNotificationType.ANNUAL_D10
-  }
-
-  if (days >= 0) {
-    return AnnualNotificationType.ANNUAL_D5
-  }
-
-  return null
+  return AnnualNotificationType.ANNUAL_D1
 }
 
 export function annualSituation(

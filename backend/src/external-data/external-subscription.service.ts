@@ -30,6 +30,17 @@ export class ExternalSubscriptionService
   }
 
   onModuleInit(): void {
+    if (this.config.source === 'file') {
+      this.cache.setSubscriptionStatus({
+        state: 'disabled',
+        id: null,
+        expiresAt: null,
+        message:
+          'Fuente local: no requiere suscripción de Microsoft Graph',
+      })
+      return
+    }
+
     if (!this.config.webhookConfigured) {
       this.cache.setSubscriptionStatus({
         state: this.config.enabled ? 'unconfigured' : 'disabled',
@@ -66,7 +77,10 @@ export class ExternalSubscriptionService
   }
 
   async handleLifecycleEvent(event: string): Promise<void> {
-    if (!this.config.webhookConfigured) {
+    if (
+      this.config.source === 'file' ||
+      !this.config.webhookConfigured
+    ) {
       return
     }
 
@@ -80,6 +94,10 @@ export class ExternalSubscriptionService
   }
 
   async ensureSubscription(): Promise<void> {
+    if (this.config.source === 'file') {
+      return
+    }
+
     if (!this.config.webhookConfigured) {
       this.cache.setSubscriptionStatus({
         state: 'unconfigured',

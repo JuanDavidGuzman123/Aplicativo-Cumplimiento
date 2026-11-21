@@ -19,13 +19,58 @@ import type {
   ExternalDueSummary,
   ExternalListQuery,
   ExternalMeta,
+  ExternalPendingActiveReport,
   ExternalReminderType,
+  ExternalReport,
+  ExternalReportMetric,
   ExternalSummary,
   ExternalUpdateDueRow,
   ExternalUpdateSituation,
 } from './types.js'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
+
+const reportCopy: Record<
+  ExternalReportMetric,
+  {
+    title: (currentYear: number) => string
+    subtitle: (count: number, currentYear: number) => string
+  }
+> = {
+  active: {
+    title: () => 'Puntos de venta activos',
+    subtitle: (count) => `${count} contrapartes activas`,
+  },
+  inactive: {
+    title: () => 'Puntos de venta inactivos',
+    subtitle: (count) => `${count} contrapartes inactivas`,
+  },
+  'updated-this-year': {
+    title: (currentYear) => `Actualizados en ${currentYear}`,
+    subtitle: (count, currentYear) =>
+      `${count} contrapartes actualizadas en ${currentYear}`,
+  },
+  'pending-active': {
+    title: () => 'Pendientes de actualizar (activos)',
+    subtitle: (count, currentYear) =>
+      `${count} activos · diligenciamiento desde ${currentYear - 1}`,
+  },
+  'pending-inactive': {
+    title: () => 'Pendientes de actualizar (inactivos)',
+    subtitle: (count, currentYear) =>
+      `${count} inactivos · sin actualización en ${currentYear}`,
+  },
+  'follow-up': {
+    title: () => 'Contrapartes en seguimiento',
+    subtitle: (count) =>
+      `${count} contrapartes con seguimiento semestral`,
+  },
+  'updates-due': {
+    title: () => 'Actualizaciones vencidas y por vencer',
+    subtitle: (count) =>
+      `${count} contrapartes con vencimiento próximo o vencido`,
+  },
+}
 
 @Injectable()
 export class ExternalDataService implements OnModuleInit {
@@ -69,7 +114,9 @@ export class ExternalDataService implements OnModuleInit {
 
     if (!this.config.readConfigured) {
       this.cache.setUnconfigured(
-        'Faltan credenciales o identificadores de Microsoft Graph',
+        this.config.source === 'file'
+          ? 'Falta EXTERNAL_WORKBOOK_PATH para la fuente local'
+          : 'Faltan credenciales o identificadores de Microsoft Graph',
       )
       return this.cache.getStatus()
     }
@@ -160,10 +207,89 @@ export class ExternalDataService implements OnModuleInit {
     }
   }
 
+  getReport(metric: ExternalReportMetric): ExternalReport {
+    const today = getBusinessToday()
+    const currentYear = today.getUTCFullYear()
+    const dueRows = this.serializedRows(currentYear).map((row) =>
+      this.toDueRow(row, today),
+    )
+    const minimumDate = new Date(Date.UTC(currentYear - 1, 0, 1))
+    let rows: ExternalUpdateDueRow[]
+
+    switch (metric) {
+      case 'active':
+        rows = dueRows.filter((row) => row.status === 'ACTIVE')
+        break
+      case 'inactive':
+        rows = dueRows.filter((row) => row.status === 'INACTIVE')
+        break
+      case 'updated-this-year':
+        rows = dueRows.filter((row) => row.updatedThisYear)
+        break
+      case 'pending-active':
+        rows = dueRows.filter(
+          (row) =>
+            row.status === 'ACTIVE' &&
+            this.isRecentFiling(row, currentYear) &&
+            !row.updatedThisYear,
+        )
+        break
+      case 'pending-inactive':
+        rows = dueRows.filter(
+          (row) =>
+            row.status === 'INACTIVE' && !row.updatedThisYear,
+        )
+        break
+      case 'follow-up':
+        rows = dueRows.filter(
+          (row) => row.requiresSemiannualFollowUp === true,
+        )
+        break
+      case 'updates-due':
+        rows = dueRows.filter(
+          (row) =>
+            row.status === 'ACTIVE' &&
+            row.filingDate !== null &&
+            parseDateOnly(row.filingDate) >= minimumDate &&
+            row.situation !== 'NOT_DUE',
+        )
+        break
+    }
+
+    rows.sort(
+      (first, second) =>
+        (first.dueDate ?? '9999-12-31').localeCompare(
+          second.dueDate ?? '9999-12-31',
+        ) ||
+        first.businessName.localeCompare(second.businessName) ||
+        first.code.localeCompare(second.code),
+    )
+
+    const copy = reportCopy[metric]
+
+    return {
+      metric,
+      title: copy.title(currentYear),
+      subtitle: copy.subtitle(rows.length, currentYear),
+      generatedAt: new Date().toISOString(),
+      currentYear,
+      rows,
+    }
+  }
+
+  getPendingActiveReport(): ExternalPendingActiveReport {
+    return this.getReport('pending-active')
+  }
+
   findAll(query: ExternalListQuery) {
     const currentYear = getBusinessToday().getUTCFullYear()
+    const code = query.code?.trim().toLowerCase() ?? ''
     const search = query.search?.trim().toLowerCase() ?? ''
     let rows = this.serializedRows(currentYear)
+
+    if (code) {
+      rows = rows.filter((row) => row.code.toLowerCase() === code)
+    }
 
     if (search) {
       rows = rows.filter(
@@ -404,19 +530,13 @@ export class ExternalDataService implements OnModuleInit {
   }
 
   private reminderType(days: number | null): ExternalReminderType | null {
-    if (days === null || days > 15) {
+    if (days === null || days > 3 || days < 0) {
       return null
     }
-    if (days > 10) {
-      return 'ANNUAL_D15'
+    if (days > 1) {
+      return 'ANNUAL_D3'
     }
-    if (days > 5) {
-      return 'ANNUAL_D10'
-    }
-    if (days >= 0) {
-      return 'ANNUAL_D5'
-    }
-    return null
+    return 'ANNUAL_D1'
   }
 
   private needsUpdate(days: number | null): boolean {

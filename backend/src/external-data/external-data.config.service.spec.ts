@@ -64,4 +64,25 @@ describe('ExternalDataConfigService', () => {
     expect(service.debounceMs).toBe(2000)
     expect(service.maxRows).toBe(5000)
   })
+
+  it('configura la fuente local sin exigir credenciales Graph', () => {
+    const fileService = createService({
+      EXTERNAL_DATA_ENABLED: true,
+      EXTERNAL_DATA_SOURCE: 'file',
+      EXTERNAL_WORKBOOK_PATH: 'C:\\datos\\base.xlsx',
+    })
+
+    expect(fileService.service.source).toBe('file')
+    expect(fileService.service.readConfigured).toBe(true)
+    expect(fileService.service.webhookConfigured).toBe(false)
+    expect(fileService.service.pollMs).toBe(60000)
+
+    const missingPath = createService({
+      EXTERNAL_DATA_ENABLED: true,
+      EXTERNAL_DATA_SOURCE: 'file',
+      EXTERNAL_WORKBOOK_PATH: '',
+    })
+
+    expect(missingPath.service.readConfigured).toBe(false)
+  })
 })

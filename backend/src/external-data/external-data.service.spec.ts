@@ -115,8 +115,8 @@ describe('ExternalDataService', () => {
       'DUE_SOON',
       'DUE_SOON',
     ])
-    expect(result.data[1].reminderType).toBe('ANNUAL_D5')
-    expect(result.data[2].reminderType).toBe('ANNUAL_D10')
+    expect(result.data[1].reminderType).toBe('ANNUAL_D3')
+    expect(result.data[2].reminderType).toBeNull()
     expect(result.summary).toMatchObject({
       needsUpdate: 1,
       overdue: 1,
@@ -146,5 +146,91 @@ describe('ExternalDataService', () => {
 
     expect(result.data).toEqual([])
     expect(result.meta.total).toBe(0)
+  })
+
+  it('filtra por código exacto desde una notificación', () => {
+    const service = createService([
+      row('37', filingDateForDue(1)),
+      row('2037', filingDateForDue(2)),
+    ])
+
+    const result = service.findAll({
+      code: '37',
+      page: 1,
+      pageSize: 10,
+    })
+
+    expect(result.data.map((item) => item.code)).toEqual(['37'])
+    expect(result.meta.total).toBe(1)
+  })
+
+  it('genera el reporte de pendientes activos con el corte reciente', () => {
+    const currentYear = getBusinessToday().getUTCFullYear()
+    const pending = row('P', filingDateForDue(1))
+    const updated = {
+      ...row('U', `${currentYear}-01-15`),
+      filingYear: currentYear,
+    }
+    const inactive = {
+      ...row('I', filingDateForDue(1)),
+      status: 'INACTIVE' as const,
+    }
+    const old = {
+      ...row('O', `${currentYear - 2}-01-15`),
+      filingYear: currentYear - 2,
+    }
+    const service = createService([
+      pending,
+      updated,
+      inactive,
+      old,
+    ])
+
+    const report = service.getPendingActiveReport()
+
+    expect(report.currentYear).toBe(currentYear)
+    expect(report.rows.map((item) => item.code)).toEqual(['P'])
+    expect(report.rows[0].annualStatus).toBe('PENDING')
+  })
+
+  it('genera reportes para cada métrica de la pantalla', () => {
+    const currentYear = getBusinessToday().getUTCFullYear()
+    const updated = {
+      ...row('U', `${currentYear}-01-15`),
+      filingYear: currentYear,
+    }
+    const pendingActive = row('PA', filingDateForDue(1))
+    const inactive = {
+      ...row('I', `${currentYear}-01-15`),
+      status: 'INACTIVE' as const,
+    }
+    const pendingInactive = {
+      ...row('PI', filingDateForDue(1)),
+      status: 'INACTIVE' as const,
+    }
+    const followUp = {
+      ...row('F', `${currentYear}-01-15`),
+      requiresSemiannualFollowUp: true,
+    }
+    const service = createService([
+      updated,
+      pendingActive,
+      inactive,
+      pendingInactive,
+      followUp,
+    ])
+    const codes = (metric: Parameters<typeof service.getReport>[0]) =>
+      service
+        .getReport(metric)
+        .rows.map((item) => item.code)
+        .sort()
+
+    expect(codes('active')).toEqual(['F', 'PA', 'U'])
+    expect(codes('inactive')).toEqual(['I', 'PI'])
+    expect(codes('updated-this-year')).toEqual(['F', 'I', 'U'])
+    expect(codes('pending-active')).toEqual(['PA'])
+    expect(codes('pending-inactive')).toEqual(['PI'])
+    expect(codes('follow-up')).toEqual(['F'])
+    expect(codes('updates-due')).toEqual(['PA'])
   })
 })

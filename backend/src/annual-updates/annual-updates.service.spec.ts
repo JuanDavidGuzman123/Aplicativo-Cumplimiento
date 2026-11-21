@@ -552,7 +552,7 @@ describe('AnnualUpdatesService', () => {
     })
 
     prisma.annualCounterparty.findMany.mockResolvedValue([
-      makeRow('row-1', 'PDV-001', filingDateForDue(5)),
+      makeRow('row-1', 'PDV-001', filingDateForDue(3)),
       makeRow('row-2', 'PDV-002', filingDateForDue(20)),
       makeRow('row-3', 'PDV-003', filingDateForDue(-2)),
       makeRow('row-4', 'PDV-004', null),
@@ -585,9 +585,9 @@ describe('AnnualUpdatesService', () => {
       'PDV-001',
     ])
     expect(result.data[1]).toMatchObject({
-      daysUntilDue: 5,
+      daysUntilDue: 3,
       situation: 'DUE_SOON',
-      reminderType: AnnualNotificationType.ANNUAL_D5,
+      reminderType: AnnualNotificationType.ANNUAL_D3,
     })
     expect(result.summary).toEqual({
       needsUpdate: 1,

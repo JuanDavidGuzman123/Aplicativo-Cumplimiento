@@ -23,6 +23,8 @@ export type ExternalReminderType =
   | 'ANNUAL_D15'
   | 'ANNUAL_D10'
   | 'ANNUAL_D5'
+  | 'ANNUAL_D3'
+  | 'ANNUAL_D1'
 
 export type ExternalAnnualMapping = Partial<
   Record<
@@ -197,6 +199,30 @@ export type ExternalDueListResponse = {
   status: ExternalDataStatus
 }
 
+export const EXTERNAL_REPORT_METRICS = [
+  'active',
+  'inactive',
+  'updated-this-year',
+  'pending-active',
+  'pending-inactive',
+  'follow-up',
+  'updates-due',
+] as const
+
+export type ExternalReportMetric =
+  (typeof EXTERNAL_REPORT_METRICS)[number]
+
+export type ExternalReport = {
+  metric: ExternalReportMetric
+  title: string
+  subtitle: string
+  generatedAt: string
+  currentYear: number
+  rows: ExternalUpdateDueRow[]
+}
+
+export type ExternalPendingActiveReport = ExternalReport
+
 export type ExternalStreamEvent = {
   type: 'status' | 'updated' | 'error'
   at: string
@@ -213,6 +239,7 @@ export type ExternalGraphSubscription = {
 }
 
 export type ExternalListQuery = {
+  code?: string
   search?: string
   status?: ExternalAnnualStatus
   annualStatus?: ExternalUpdateFilter

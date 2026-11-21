@@ -16,6 +16,17 @@ export type ExternalReminderType =
   | 'ANNUAL_D15'
   | 'ANNUAL_D10'
   | 'ANNUAL_D5'
+  | 'ANNUAL_D3'
+  | 'ANNUAL_D1'
+
+export type ExternalReportMetric =
+  | 'active'
+  | 'inactive'
+  | 'updated-this-year'
+  | 'pending-active'
+  | 'pending-inactive'
+  | 'follow-up'
+  | 'updates-due'
 
 export type ExternalAnnualRow = {
   id: string
@@ -157,6 +168,7 @@ export type ExternalStreamEvent = {
 }
 
 export type ExternalListParams = {
+  code?: string
   search?: string
   status?: ExternalAnnualStatus | ''
   annualStatus?: ExternalUpdateFilter | ''

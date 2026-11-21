@@ -19,7 +19,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 | 9. Pruebas y seguridad | Completada |
 | 10. Despliegue | Preparada (ejecución pendiente en servidor) |
 | Actualización anual (módulo adicional) | Completada |
-| Fuente anual externa (Microsoft Graph, webhook y SSE) | Implementada (pendiente de credenciales reales y URL pública) |
+| Fuente anual externa (Microsoft Graph o archivo local, webhook y SSE) | Implementada; modo local activo y Graph pendiente de consentimiento |
 
 Las fases 3 a 9 incorporan inicio de sesión con JWT, administración de usuarios (solo ADMIN), catálogo de subprocesos, gestión de contrapartes, seguimientos, documentos de soporte, notificaciones de vencimiento, importación de Excel, dashboard de indicadores y consulta de auditoría (solo ADMIN). La Fase 10 deja preparados los contenedores, la migración, los respaldos y la telemetría para ejecutarse en un servidor. El módulo adicional de actualización anual es independiente del seguimiento semestral y genera alertas anuales propias. No se incluyen datos ficticios.
 
@@ -218,14 +218,14 @@ Para restaurar, detener la API, restaurar el dump con `pg_restore --clean --if-e
 ## Verificación de Actualización anual con fuente externa
 
 - El módulo `/actualizacion-anual` consume exclusivamente la fuente externa: `GET /api/external-data/summary`, `GET /api/external-data`, `GET /api/external-data/updates-due`, `GET /api/external-data/status`, `GET /api/external-data/events` y `POST /api/external-data/refresh`. La importación manual de la base anual quedó retirada de la pantalla.
-- Los datos se leen de un único libro de SharePoint/OneDrive mediante Microsoft Graph con credenciales de aplicación. El aplicativo no escribe en el libro, no elimina archivos y no transfiere información entre PostgreSQL y Excel.
-- La lectura intenta primero la tabla configurada y, si no existe, la primera tabla; sin tablas usa la hoja configurada o la primera, sobre el rango usado. Las columnas se detectan por alias FR-SG o por `EXTERNAL_DATA_COLUMN_MAP`.
+- Los datos se leen de un único libro de SharePoint/OneDrive. La fuente se elige con `EXTERNAL_DATA_SOURCE`: `graph` usa Microsoft Graph con credenciales de aplicación; `file` lee un `.xlsx` local con ExcelJS. El aplicativo no escribe en el libro, no elimina archivos y no transfiere información entre PostgreSQL y Excel.
+- En modo `graph`, la lectura intenta primero la tabla configurada y, si no existe, la primera tabla; sin tablas usa la hoja configurada o la primera, sobre el rango usado. En modo `file`, usa la hoja configurada o la primera del archivo local. Las columnas se detectan por alias FR-SG o por `EXTERNAL_DATA_COLUMN_MAP`.
 - El mapeo deduplica por código normalizado y conserva la fila con año/fecha más reciente. Los valores `N/A`, `NA`, `no aplica`, `sin fecha`, `sin dato`, `-` y `--` se tratan como vacío. Los registros inválidos se omiten del snapshot y se reportan en las estadísticas.
-- El snapshot vive solo en memoria. Si Graph falla, se conserva el último snapshot pero el estado pasa a `stale`/`degraded`; nunca se guarda una copia en PostgreSQL.
-- Las actualizaciones se publican por SSE autenticado (`fetch` con `Authorization`), con un badge de conexión, última actualización y sincronización manual. El webhook de Graph valida `validationToken` y `clientState`; también existe polling de respaldo configurable.
-- La fecha límite sigue siendo la fecha de diligenciamiento más un año, con ajuste del 29 de febrero al 28. Los pendientes consideran solo diligenciamientos desde el año anterior; los inactivos solo entran en los conteos. Las alertas anuales `ANNUAL_D15`, `ANNUAL_D10` y `ANNUAL_D5` permanecen separadas de las semestrales.
-- `EXTERNAL_DATA_ENABLED` está desactivado por defecto. La integración requiere `MICROSOFT_*`, `SHAREPOINT_DRIVE_ID`, `SHAREPOINT_ITEM_ID`, `EXTERNAL_WEBHOOK_PUBLIC_URL` y `EXTERNAL_WEBHOOK_CLIENT_STATE`; la URL pública debe apuntar a la base de la API y el backend agrega `/external-data/webhook`.
-- `npm test` pasa con 55 pruebas unitarias en 16 archivos y `npm run test:e2e` con 11 pruebas; build y lint pasan en backend y frontend. Queda pendiente la verificación real contra el tenant, el libro definitivo y un webhook HTTPS público.
+- El snapshot vive solo en memoria. Si la fuente falla, se conserva el último snapshot pero el estado pasa a `stale`/`degraded`; nunca se guarda una copia en PostgreSQL.
+- Las actualizaciones se publican por SSE autenticado (`fetch` con `Authorization`), con un badge de conexión, última actualización y sincronización manual. En modo `graph`, el webhook valida `validationToken` y `clientState`; en modo `file` no hay suscripción ni webhook y el polling de respaldo recarga según `EXTERNAL_FALLBACK_POLL_MS`.
+- La fecha límite sigue siendo la fecha de diligenciamiento más un año, con ajuste del 29 de febrero al 28. Los pendientes consideran solo diligenciamientos desde el año anterior; los inactivos solo entran en los conteos. Las alertas anuales `ANNUAL_D3` y `ANNUAL_D1` permanecen separadas de las semestrales.
+- `EXTERNAL_DATA_ENABLED` está desactivado por defecto. En modo `graph` se requieren `MICROSOFT_*`, `SHAREPOINT_DRIVE_ID`, `SHAREPOINT_ITEM_ID`, `EXTERNAL_WEBHOOK_PUBLIC_URL` y `EXTERNAL_WEBHOOK_CLIENT_STATE`; la URL pública debe apuntar a la base de la API y el backend agrega `/external-data/webhook`. En modo `file` solo se requiere `EXTERNAL_WORKBOOK_PATH`.
+- `npm test` pasa con 58 pruebas unitarias en 17 archivos y `npm run test:e2e` con 11 pruebas; build y lint pasan en backend y frontend. El modo local se validó con `FR-SG-79` (637 registros y 0 errores de mapeo). Queda pendiente Graph con consentimiento de administrador y un webhook HTTPS público.
 
 ## Scripts
 
@@ -265,10 +265,12 @@ npm run lint
 | `SEED_ADMIN_*` | Usuario administrador inicial |
 | `SCHEDULE_NOTIFICATIONS_CRON` | Ejecución diaria de notificaciones |
 | `EXTERNAL_DATA_ENABLED` | Activa la lectura del libro externo (`false` por defecto) |
-| `MICROSOFT_TENANT_ID` / `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Credenciales de aplicación para Microsoft Graph |
-| `SHAREPOINT_DRIVE_ID` / `SHAREPOINT_ITEM_ID` | Identificadores del único libro externo |
+| `EXTERNAL_DATA_SOURCE` | Fuente del libro externo: `graph` o `file` (`graph` por defecto) |
+| `EXTERNAL_WORKBOOK_PATH` | Ruta absoluta del `.xlsx` cuando `EXTERNAL_DATA_SOURCE=file` |
+| `MICROSOFT_TENANT_ID` / `MICROSOFT_CLIENT_ID` / `MICROSOFT_CLIENT_SECRET` | Credenciales de aplicación para Microsoft Graph (solo modo `graph`) |
+| `SHAREPOINT_DRIVE_ID` / `SHAREPOINT_ITEM_ID` | Identificadores del único libro externo (solo modo `graph`) |
 | `EXTERNAL_DATA_TABLE_NAME` / `EXTERNAL_DATA_WORKSHEET_NAME` / `EXTERNAL_DATA_COLUMN_MAP` | Selección de tabla/hoja y mapeo opcional de columnas |
-| `EXTERNAL_WEBHOOK_PUBLIC_URL` / `EXTERNAL_WEBHOOK_CLIENT_STATE` | URL pública base de la API y secreto del webhook de Graph |
+| `EXTERNAL_WEBHOOK_PUBLIC_URL` / `EXTERNAL_WEBHOOK_CLIENT_STATE` | URL pública base de la API y secreto del webhook (solo modo `graph`) |
 | `EXTERNAL_GRAPH_BASE_URL` / `EXTERNAL_GRAPH_TIMEOUT_MS` / `EXTERNAL_FALLBACK_POLL_MS` / `EXTERNAL_REFRESH_DEBOUNCE_MS` / `EXTERNAL_MAX_ROWS` | Ajustes de Graph, reintento, polling y límite de filas |
 | `OBSERVE_APP_KEY` / `OBSERVE_APP_SECRET` | Credenciales de NestJS Observe (producción) |
 | `OBSERVE_SERVICE_ID` / `OBSERVE_SERVICE_VERSION` | Identidad y versión del servicio en Observe |

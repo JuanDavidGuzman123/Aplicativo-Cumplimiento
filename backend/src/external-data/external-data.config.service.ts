@@ -9,6 +9,19 @@ export class ExternalDataConfigService {
     return this.config.get<boolean>('EXTERNAL_DATA_ENABLED') === true
   }
 
+  get source(): 'graph' | 'file' {
+    return this.config.get<string>('EXTERNAL_DATA_SOURCE')?.trim() ===
+      'file'
+      ? 'file'
+      : 'graph'
+  }
+
+  get localWorkbookPath(): string {
+    return (
+      this.config.get<string>('EXTERNAL_WORKBOOK_PATH')?.trim() ?? ''
+    )
+  }
+
   get tenantId(): string {
     return this.config.get<string>('MICROSOFT_TENANT_ID')?.trim() ?? ''
   }
@@ -19,6 +32,10 @@ export class ExternalDataConfigService {
 
   get clientSecret(): string {
     return this.config.get<string>('MICROSOFT_CLIENT_SECRET') ?? ''
+  }
+
+  get refreshToken(): string {
+    return this.config.get<string>('MICROSOFT_REFRESH_TOKEN')?.trim() ?? ''
   }
 
   get driveId(): string {
@@ -77,7 +94,10 @@ export class ExternalDataConfigService {
   }
 
   get pollMs(): number {
-    return this.config.get<number>('EXTERNAL_FALLBACK_POLL_MS') ?? 900000
+    return (
+      this.config.get<number>('EXTERNAL_FALLBACK_POLL_MS') ??
+      (this.source === 'file' ? 60000 : 900000)
+    )
   }
 
   get debounceMs(): number {
@@ -91,9 +111,16 @@ export class ExternalDataConfigService {
   }
 
   get readConfigured(): boolean {
+    if (!this.enabled) {
+      return false
+    }
+
+    if (this.source === 'file') {
+      return Boolean(this.localWorkbookPath)
+    }
+
     return Boolean(
-      this.enabled &&
-        this.tenantId &&
+      this.tenantId &&
         this.clientId &&
         this.clientSecret &&
         this.driveId &&
@@ -102,6 +129,10 @@ export class ExternalDataConfigService {
   }
 
   get webhookConfigured(): boolean {
+    if (this.source === 'file') {
+      return false
+    }
+
     return Boolean(
       this.readConfigured &&
         this.webhookUrl &&

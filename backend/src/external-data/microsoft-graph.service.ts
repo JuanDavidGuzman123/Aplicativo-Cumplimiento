@@ -4,11 +4,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common'
 import type { ExternalGraphSubscription } from './types.js'
+import { DelegatedTokenStore } from './delegated-token.store.js'
 import { ExternalDataConfigService } from './external-data.config.service.js'
 
 type TokenResponse = {
   access_token: string
   expires_in: number
+  refresh_token?: string
 }
 
 type GraphValueResponse<T> = {
@@ -57,7 +59,10 @@ export class MicrosoftGraphService {
   private tokenExpiresAt = 0
   private tokenPromise: Promise<string> | null = null
 
-  constructor(private readonly config: ExternalDataConfigService) {}
+  constructor(
+    private readonly config: ExternalDataConfigService,
+    private readonly tokenStore: DelegatedTokenStore,
+  ) {}
 
   get driveItemsPath(): string {
     return `/drives/${encodeURIComponent(this.config.driveId)}/items/${encodeURIComponent(this.config.itemId)}`
@@ -202,6 +207,47 @@ export class MicrosoftGraphService {
   }
 
   private async requestAccessToken(): Promise<string> {
+    const storedRefreshToken = await this.tokenStore.read()
+    const refreshToken = storedRefreshToken || this.config.refreshToken
+
+    if (refreshToken) {
+      return this.requestDelegatedAccessToken(refreshToken)
+    }
+
+    return this.requestAppAccessToken()
+  }
+
+  private async requestDelegatedAccessToken(
+    refreshToken: string,
+  ): Promise<string> {
+    const tenant = encodeURIComponent(this.config.tenantId)
+    const url = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`
+    const body = new URLSearchParams({
+      client_id: this.config.clientId,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      scope: 'https://graph.microsoft.com/Files.Read.All',
+    })
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+      signal: AbortSignal.timeout(this.config.graphTimeoutMs),
+    })
+
+    const data = await this.readTokenResponse(response)
+
+    if (data.refresh_token) {
+      await this.tokenStore.write(data.refresh_token)
+    }
+
+    return this.storeToken(data)
+  }
+
+  private async requestAppAccessToken(): Promise<string> {
     const tenant = encodeURIComponent(this.config.tenantId)
     const url = `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`
     const body = new URLSearchParams({
@@ -220,6 +266,11 @@ export class MicrosoftGraphService {
       signal: AbortSignal.timeout(this.config.graphTimeoutMs),
     })
 
+    const data = await this.readTokenResponse(response)
+    return this.storeToken(data)
+  }
+
+  private async readTokenResponse(response: Response): Promise<TokenResponse> {
     if (!response.ok) {
       const detail = await this.readError(response)
       throw new ServiceUnavailableException(
@@ -235,6 +286,10 @@ export class MicrosoftGraphService {
       )
     }
 
+    return data
+  }
+
+  private storeToken(data: TokenResponse): string {
     this.accessToken = data.access_token
     this.tokenExpiresAt =
       Date.now() + Math.max(data.expires_in - 60, 60) * 1000

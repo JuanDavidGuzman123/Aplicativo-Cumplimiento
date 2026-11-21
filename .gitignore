@@ -13,9 +13,11 @@ coverage/
 !.env.example
 !.env.production.example
 !frontend/.env.example
+.microsoft-tokens.json
 
 # Archivos cargados por usuarios
 uploads/*
+data/*
 !uploads/.gitkeep
 
 # Respaldos locales

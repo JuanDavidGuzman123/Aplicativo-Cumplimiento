@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common'
 import { ReplaySubject } from 'rxjs'
+import { DelegatedTokenStore } from './delegated-token.store.js'
 import { ExternalAnnualMapperService } from './external-annual-mapper.service.js'
 import { ExternalChangeDetectionService } from './external-change-detection.service.js'
 import { ExternalDataCacheService } from './external-data.cache.service.js'
 import { ExternalDataConfigService } from './external-data.config.service.js'
 import { ExternalDataController } from './external-data.controller.js'
+import { ExternalDataReportService } from './external-data-report.service.js'
 import { ExternalDataService } from './external-data.service.js'
 import { EXTERNAL_EVENTS_SUBJECT } from './external-data.tokens.js'
 import { ExternalPollingService } from './external-polling.service.js'
@@ -23,10 +25,12 @@ import type { ExternalStreamEvent } from './types.js'
     },
     ExternalDataConfigService,
     ExternalDataCacheService,
+    DelegatedTokenStore,
     MicrosoftGraphService,
     ExternalWorkbookReaderService,
     ExternalAnnualMapperService,
     ExternalDataService,
+    ExternalDataReportService,
     ExternalPollingService,
     ExternalSubscriptionService,
     ExternalChangeDetectionService,

@@ -44,6 +44,10 @@ export class ExternalChangeDetectionService implements OnModuleDestroy {
   }
 
   async handleWebhook(payload: unknown): Promise<void> {
+    if (this.config.source === 'file') {
+      return
+    }
+
     const notifications = this.readNotifications(payload)
 
     if (notifications.length === 0) {

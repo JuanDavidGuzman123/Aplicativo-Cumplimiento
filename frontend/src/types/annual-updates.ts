@@ -161,6 +161,8 @@ export type AnnualReminderType =
   | 'ANNUAL_D15'
   | 'ANNUAL_D10'
   | 'ANNUAL_D5'
+  | 'ANNUAL_D3'
+  | 'ANNUAL_D1'
 
 export type AnnualUpdateDueRow = AnnualUpdateRow & {
   dueDate: string | null
