@@ -24,12 +24,10 @@ import {
   indexesFrom,
   normalizeCell,
   normalizeDate,
-  statusFrom,
-  uuidFromRowNumber,
+  uuidFromDocument,
   type ColocadoresPrepareResult,
   type FieldKey,
   type HeaderIndexes,
-  type WorkbookField,
 } from './colocadores-workbook.util.js'
 import type {
   ExternalImportHeader,
@@ -50,7 +48,7 @@ const SUBPROCESS = {
   active: true,
 }
 
-type Overlay = Partial<Record<WorkbookField, string>>
+type Overlay = Partial<Record<FieldKey, string>>
 
 type ColocadoresRow = {
   id: string
@@ -305,17 +303,20 @@ export class ColocadoresWorkbookService {
 
     return workbook.rows
       .filter((row) => {
-        const followUp = this.valueFrom(row, workbook.headers, indexes, 'followUp')
-        const archived =
-          statusFrom(this.valueFrom(row, workbook.headers, indexes, 'status')) ===
-          CounterpartyStatus.ARCHIVED
+        const document = normalizeCell(
+          this.valueFrom(row, workbook.headers, indexes, 'document'),
+        )
+        const followUp = normalizeCell(
+          this.valueFrom(row, workbook.headers, indexes, 'followUp'),
+        ).toLowerCase()
 
-        return normalizeCell(followUp).toLowerCase() === 'si' || archived
+        return Boolean(document) && (followUp === 'si' || followUp === 'no')
       })
       .map((row) => {
-        const id =
-          normalizeCell(this.valueFrom(row, workbook.headers, indexes, 'id')) ||
-          uuidFromRowNumber(row.rowNumber)
+        const document = normalizeCell(
+          this.valueFrom(row, workbook.headers, indexes, 'document'),
+        )
+        const id = uuidFromDocument(document)
         const patch = this.overlay.get(id) ?? {}
         const raw = (field: FieldKey): unknown =>
           (patch as Record<string, string | undefined>)[field] ??
@@ -323,7 +324,11 @@ export class ColocadoresWorkbookService {
         const registrationDate =
           normalizeDate(raw('registrationDate')) ??
           new Date().toISOString().slice(0, 10)
-        const status = statusFrom(raw('status'))
+        const followUpRaw = normalizeCell(raw('followUp'))
+        const status =
+          followUpRaw.toLowerCase() === 'no'
+            ? CounterpartyStatus.ARCHIVED
+            : CounterpartyStatus.ACTIVE
         const lastEvaluation = normalizeDate(raw('lastEvaluation'))
         const nextFollowUp = normalizeDate(raw('nextFollowUp'))
         const archivedAt = normalizeDate(raw('archivedAt'))
@@ -337,7 +342,7 @@ export class ColocadoresWorkbookService {
         return {
           id,
           rowNumber: row.rowNumber,
-          nit: normalizeCell(raw('document')),
+          nit: document,
           businessName: normalizeCell(raw('name')),
           registrationDate,
           lastFollowUpDate: lastEvaluation ?? registrationDate,
@@ -350,22 +355,20 @@ export class ColocadoresWorkbookService {
           decision,
           observations: observations || null,
           archivedAt,
-          followUpRaw: normalizeCell(
-            this.valueFrom(row, workbook.headers, indexes, 'followUp'),
-          ),
+          followUpRaw,
         }
       })
   }
 
   private async writeFields(
     id: string,
-    fields: Partial<Record<WorkbookField, string>>,
+    fields: Overlay & { followUp: string },
   ): Promise<void> {
     await this.writer.writeFields(
       this.config.colocadoresWorkbookPath,
       this.config.colocadoresWorksheetName,
       id,
-      fields,
+      { followUp: fields.followUp },
     )
 
     const previous = this.overlay.get(id)

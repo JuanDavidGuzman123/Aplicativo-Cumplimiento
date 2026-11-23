@@ -17,14 +17,7 @@ export const FIELD_ALIASES = {
 
 export type FieldKey = keyof typeof FIELD_ALIASES
 
-export type WorkbookField =
-  | 'followUp'
-  | 'status'
-  | 'lastEvaluation'
-  | 'nextFollowUp'
-  | 'decision'
-  | 'archivedAt'
-  | 'observations'
+export type WorkbookField = 'followUp'
 
 export type HeaderIndexes = Partial<Record<FieldKey, number>>
 
@@ -131,9 +124,9 @@ export function columnLetter(index: number): string {
   return result
 }
 
-export function uuidFromRowNumber(rowNumber: number): string {
+export function uuidFromDocument(document: string): string {
   const hash = createHash('sha256')
-    .update(`colocadores-fr-sg-81:${rowNumber}`)
+    .update(`colocadores-fr-sg-81:${document}`)
     .digest('hex')
     .slice(0, 32)
     .split('')

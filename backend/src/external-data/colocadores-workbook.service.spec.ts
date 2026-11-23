@@ -25,12 +25,6 @@ const headers = [
   'Seguimiento Si/No',
   'Observaciones',
   'Riesgo Jurisdiccional',
-  'ID Unico',
-  'Estado',
-  'Fecha Ultima Evaluacion',
-  'Fecha Proximo Seguimiento',
-  'Resultado Evaluacion',
-  'Fecha Archivado',
 ]
 
 const rowValues = [
@@ -49,12 +43,6 @@ const rowValues = [
   'Si',
   observations,
   'Critico',
-  '',
-  '',
-  '',
-  '',
-  '',
-  '',
 ]
 
 const config = {
@@ -80,8 +68,8 @@ function createService(values = rowValues) {
     prepare: vi.fn(async () => ({
       sourceRows: 1955,
       followUpRows: 1,
-      created: 1,
-      alreadyExisting: 0,
+      created: 0,
+      alreadyExisting: 1,
       skippedInvalid: 0,
     })),
     writeFields: vi.fn(async () => undefined),
@@ -117,7 +105,7 @@ describe('ColocadoresWorkbookService', () => {
     })
   })
 
-  it('escribe la evaluación en el archivo local sin usar PostgreSQL', async () => {
+  it('solo cambia Seguimiento Si/No en el Excel y guarda la evaluación en memoria', async () => {
     const { service, writer } = createService()
     const listed = await service.list({ page: 1, pageSize: 10 } as never)
     const id = listed.data[0].id
@@ -137,14 +125,7 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81.xlsx',
       'FR-SG-81',
       id,
-      expect.objectContaining({
-        followUp: 'Si',
-        status: 'ACTIVE',
-        decision: RiskDecision.CONTINUE,
-        lastEvaluation: '2026-11-23',
-        nextFollowUp: '2027-05-23',
-        observations: 'Nueva observación',
-      }),
+      { followUp: 'Si' },
     )
     expect(detail.observations).toBe('Nueva observación')
     expect(detail.riskEvaluations[0].decision).toBe(RiskDecision.CONTINUE)
@@ -169,19 +150,14 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81.xlsx',
       'FR-SG-81',
       id,
-      expect.objectContaining({
-        followUp: 'No',
-        status: 'ARCHIVED',
-        decision: RiskDecision.ARCHIVE,
-      }),
+      { followUp: 'No' },
     )
     expect(detail.status).toBe('ARCHIVED')
   })
 
-  it('mantiene visibles las archivadas aunque Seguimiento sea No', async () => {
+  it('mantiene visibles las archivadas cuando Seguimiento es No', async () => {
     const archivedValues = [...rowValues]
     archivedValues[12] = 'No'
-    archivedValues[16] = 'ARCHIVED'
     const { service } = createService(archivedValues)
 
     const result = await service.list({ page: 1, pageSize: 10 } as never)
@@ -190,7 +166,7 @@ describe('ColocadoresWorkbookService', () => {
     expect(result.data[0].status).toBe('ARCHIVED')
   })
 
-  it('prepara columnas e IDs usando el writer local', async () => {
+  it('prepara el libro sin modificarlo', async () => {
     const { service, writer } = createService()
 
     const result = await service.prepareWorkbook()
@@ -199,6 +175,6 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81.xlsx',
       'FR-SG-81',
     )
-    expect(result.followUpRows).toBe(1)
+    expect(result).toMatchObject({ created: 0, followUpRows: 1 })
   })
 })

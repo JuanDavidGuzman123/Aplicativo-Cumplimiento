@@ -120,10 +120,10 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 
 ### Workbook de seguimiento de Colocadores
 
-- FR-SG-81 se lee y se escribe desde `EXTERNAL_COLOCADORES_WORKBOOK_PATH` con la hoja `EXTERNAL_COLOCADORES_WORKSHEET_NAME`, igual que Arriendos usa su ruta local. Participan las filas con `Seguimiento Si/No = Si` y las que tienen `Estado = ARCHIVED`, para que una archivada no desaparezca aunque su seguimiento pase a `No`.
-- `POST /counterparties/sync-colocadores` prepara en el archivo local las columnas `ID Unico`, `Estado`, `Fecha Ultima Evaluacion`, `Fecha Proximo Seguimiento`, `Resultado Evaluacion` y `Fecha Archivado`, y asigna IDs estables. El sync no crea contrapartes en PostgreSQL.
-- No se usan `itemId`, `driveId`, credenciales ni permisos de Microsoft Graph para Colocadores: el destino de escritura es el mismo `.xlsx` local sincronizado.
-- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` escriben celdas del workbook local con ExcelJS y devuelven el detalle derivado del propio Excel. Además de estado, decisión, fechas y observaciones, actualizan `Seguimiento Si/No`: archivar escribe `No`; continuar o reactivar escriben `Si`. La interfaz no confirma la operación si falla la escritura del archivo.
+- FR-SG-81 se lee desde `EXTERNAL_COLOCADORES_WORKBOOK_PATH` con la hoja `EXTERNAL_COLOCADORES_WORKSHEET_NAME`. Participan las filas con `Seguimiento Si/No = Si` o `No`; no se usa ninguna columna `Estado`.
+- `POST /counterparties/sync-colocadores` solo valida que existan `Numero de documento` y `Seguimiento Si/No` y cuenta las filas. No agrega columnas, IDs, filas ni contrapartes en PostgreSQL. El identificador de la app se deriva del número de documento y no se escribe en el Excel.
+- No se usan `itemId`, `driveId`, credenciales ni permisos de Microsoft Graph para Colocadores: el único destino de escritura es la celda `Seguimiento Si/No` del `.xlsx` local.
+- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` cambian únicamente `Seguimiento Si/No` con ExcelJS: archivar escribe `No`; continuar o reactivar escriben `Si`. Fechas, decisión y observaciones de la evaluación se conservan solo en memoria durante la sesión del backend. La interfaz no confirma la operación si falla la escritura del archivo.
 - Los estados mostrados son `Al día`, `Revisada`, `Vencida` y `Archivada`. El próximo seguimiento se calcula a 6 meses desde la evaluación o reactivación.
 
 ### Dashboard (Fase 8)

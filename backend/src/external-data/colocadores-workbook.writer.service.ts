@@ -1,36 +1,13 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common'
-import { CounterpartyStatus } from '@prisma/client'
 import ExcelJS from 'exceljs'
 import {
   FIELD_ALIASES,
   findHeaderIndex,
   normalizeCell,
-  statusFrom,
-  uuidFromRowNumber,
+  uuidFromDocument,
   type ColocadoresPrepareResult,
-  type FieldKey,
-  type HeaderIndexes,
   type WorkbookField,
 } from './colocadores-workbook.util.js'
-
-const FIELD_TO_KEY: Record<WorkbookField, FieldKey> = {
-  followUp: 'followUp',
-  status: 'status',
-  lastEvaluation: 'lastEvaluation',
-  nextFollowUp: 'nextFollowUp',
-  decision: 'decision',
-  archivedAt: 'archivedAt',
-  observations: 'observations',
-}
-
-const REQUIRED_HEADERS: [FieldKey, string][] = [
-  ['id', 'ID Unico'],
-  ['status', 'Estado'],
-  ['lastEvaluation', 'Fecha Ultima Evaluacion'],
-  ['nextFollowUp', 'Fecha Proximo Seguimiento'],
-  ['decision', 'Resultado Evaluacion'],
-  ['archivedAt', 'Fecha Archivado'],
-]
 
 @Injectable()
 export class ColocadoresWorkbookWriterService {
@@ -42,75 +19,33 @@ export class ColocadoresWorkbookWriterService {
     const sheet = this.sheet(workbook, worksheetName)
     const headerRowNumber = this.headerRowNumber(sheet)
     const headers = this.headerValues(sheet, headerRowNumber)
-    const indexes = this.indexes(headers)
-    let createdHeaders = 0
+    const documentIndex = findHeaderIndex(headers, FIELD_ALIASES.document)
+    const followUpIndex = findHeaderIndex(headers, FIELD_ALIASES.followUp)
 
-    for (const [field, label] of REQUIRED_HEADERS) {
-      if (indexes[field] !== undefined) {
-        continue
-      }
-
-      let column = headers.length
-      while (column > 0 && !normalizeCell(headers[column - 1])) {
-        column -= 1
-      }
-
-      sheet.getCell(headerRowNumber, column + 1).value = label
-      headers[column] = label
-      indexes[field] = column
-      createdHeaders += 1
-    }
-
-    const idIndex = indexes.id
-    const documentIndex = indexes.document
-    const followUpIndex = indexes.followUp
-    const statusIndex = indexes.status
-
-    if (
-      idIndex === undefined ||
-      documentIndex === undefined ||
-      followUpIndex === undefined
-    ) {
+    if (documentIndex < 0 || followUpIndex < 0) {
       throw new ServiceUnavailableException(
-        'No se encontraron las columnas necesarias en FR-SG-81',
+        'No se encontraron Numero de documento y Seguimiento Si/No en FR-SG-81',
       )
     }
 
-    let created = 0
     let followUpRows = 0
 
     for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const document = this.cellText(sheet.getCell(rowNumber, documentIndex + 1))
       const followUp = this.cellText(
         sheet.getCell(rowNumber, followUpIndex + 1),
-      )
-      const archived =
-        statusIndex !== undefined &&
-        statusFrom(sheet.getCell(rowNumber, statusIndex + 1).value) ===
-          CounterpartyStatus.ARCHIVED
+      ).toLowerCase()
 
-      if (!document || (followUp.toLowerCase() !== 'si' && !archived)) {
-        continue
+      if (document && (followUp === 'si' || followUp === 'no')) {
+        followUpRows += 1
       }
-
-      followUpRows += 1
-      const idCell = sheet.getCell(rowNumber, idIndex + 1)
-
-      if (!this.cellText(idCell)) {
-        idCell.value = uuidFromRowNumber(rowNumber)
-        created += 1
-      }
-    }
-
-    if (created > 0 || createdHeaders > 0) {
-      await this.save(workbook, filePath)
     }
 
     return {
       sourceRows: Math.max(0, sheet.rowCount - headerRowNumber),
       followUpRows,
-      created,
-      alreadyExisting: Math.max(0, followUpRows - created),
+      created: 0,
+      alreadyExisting: followUpRows,
       skippedInvalid: 0,
     }
   }
@@ -121,26 +56,33 @@ export class ColocadoresWorkbookWriterService {
     id: string,
     fields: Partial<Record<WorkbookField, string>>,
   ): Promise<void> {
+    const followUp = fields.followUp
+
+    if (followUp === undefined) {
+      throw new ServiceUnavailableException(
+        'No se indicó el valor de Seguimiento Si/No',
+      )
+    }
+
     const workbook = await this.read(filePath)
     const sheet = this.sheet(workbook, worksheetName)
     const headerRowNumber = this.headerRowNumber(sheet)
-    const indexes = this.indexes(
-      this.headerValues(sheet, headerRowNumber),
-    )
-    const idIndex = indexes.id
+    const headers = this.headerValues(sheet, headerRowNumber)
+    const documentIndex = findHeaderIndex(headers, FIELD_ALIASES.document)
+    const followUpIndex = findHeaderIndex(headers, FIELD_ALIASES.followUp)
 
-    if (idIndex === undefined) {
+    if (documentIndex < 0 || followUpIndex < 0) {
       throw new ServiceUnavailableException(
-        'No se encontró la columna ID Unico en FR-SG-81',
+        'No se encontraron Numero de documento y Seguimiento Si/No en FR-SG-81',
       )
     }
 
     let targetRow = 0
 
     for (let rowNumber = headerRowNumber + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
-      if (
-        this.cellText(sheet.getCell(rowNumber, idIndex + 1)) === id
-      ) {
+      const document = this.cellText(sheet.getCell(rowNumber, documentIndex + 1))
+
+      if (document && uuidFromDocument(document) === id) {
         targetRow = rowNumber
         break
       }
@@ -152,19 +94,13 @@ export class ColocadoresWorkbookWriterService {
       )
     }
 
-    for (const [field, value] of Object.entries(fields)) {
-      const key = FIELD_TO_KEY[field as WorkbookField]
-      const column = indexes[key]
+    const cell = sheet.getCell(targetRow, followUpIndex + 1)
 
-      if (column === undefined) {
-        throw new ServiceUnavailableException(
-          'Falta ejecutar la preparación de columnas de FR-SG-81',
-        )
-      }
-
-      sheet.getCell(targetRow, column + 1).value = value ?? ''
+    if (this.cellText(cell).toLowerCase() === followUp.toLowerCase()) {
+      return
     }
 
+    cell.value = followUp
     await this.save(workbook, filePath)
   }
 
@@ -243,15 +179,6 @@ export class ColocadoresWorkbookWriterService {
     return values
   }
 
-  private indexes(headers: string[]): HeaderIndexes {
-    return Object.fromEntries(
-      (Object.keys(FIELD_ALIASES) as FieldKey[]).map((field) => {
-        const index = findHeaderIndex(headers, FIELD_ALIASES[field])
-        return [field, index >= 0 ? index : undefined]
-      }),
-    ) as HeaderIndexes
-  }
-
   private cellText(cell: ExcelJS.Cell): string {
     const value = cell.value
 
@@ -285,8 +212,18 @@ export class ColocadoresWorkbookWriterService {
         .join('')
     }
 
-    if (value && typeof value === 'object' && 'text' in value) {
-      return this.valueToText(value.text)
+    if (value && typeof value === 'object') {
+      const richText = value as { richText?: { text?: unknown }[]; text?: unknown }
+
+      if (Array.isArray(richText.richText)) {
+        return richText.richText
+          .map((item) => this.valueToText(item.text))
+          .join('')
+      }
+
+      if ('text' in richText) {
+        return this.valueToText(richText.text)
+      }
     }
 
     return ''
