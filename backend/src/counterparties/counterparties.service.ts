@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { CounterpartyStatus, Prisma } from '@prisma/client'
+import { CounterpartyStatus, Prisma, RiskDecision } from '@prisma/client'
 import { AuditService } from '../audit/audit.service.js'
+import { DEFAULT_CATEGORY_KEY } from '../categories/category.constants.js'
 import {
   calculateCalendarStatus,
 } from '../common/utils/calendar-status.js'
@@ -21,6 +22,7 @@ import { PrismaService } from '../prisma/prisma.service.js'
 import { CounterpartyActionDto, ReactivateCounterpartyDto } from './dto/counterparty-action.dto.js'
 import { CreateCounterpartyDto } from './dto/create-counterparty.dto.js'
 import { ListCounterpartiesQueryDto } from './dto/list-counterparties-query.dto.js'
+import { EvaluateRiskDto } from './dto/risk-evaluation.dto.js'
 import { UpdateCounterpartyDto } from './dto/update-counterparty.dto.js'
 
 const listSelect = {
@@ -31,6 +33,10 @@ const listSelect = {
   registrationDate: true,
   lastFollowUpDate: true,
   nextFollowUpDate: true,
+  observations: true,
+  category: {
+    select: { id: true, key: true, name: true },
+  },
   subprocess: {
     select: { id: true, name: true, active: true },
   },
@@ -38,7 +44,6 @@ const listSelect = {
 
 const detailSelect = {
   ...listSelect,
-  observations: true,
   archivedAt: true,
   archiveReason: true,
   archivedBy: { select: { id: true, name: true, email: true } },
@@ -48,6 +53,18 @@ const detailSelect = {
   createdAt: true,
   updatedAt: true,
   _count: { select: { followUps: true } },
+  riskEvaluations: {
+    orderBy: [{ evaluatedAt: 'desc' }, { createdAt: 'desc' }],
+    select: {
+      id: true,
+      decision: true,
+      evaluatedAt: true,
+      nextFollowUpDate: true,
+      notes: true,
+      createdAt: true,
+      createdBy: { select: { id: true, name: true } },
+    },
+  },
 } satisfies Prisma.CounterpartySelect
 
 type ListRow = Prisma.CounterpartyGetPayload<{ select: typeof listSelect }>
@@ -63,6 +80,8 @@ function serializeList(row: ListRow) {
     lastFollowUpDate: toDateOnly(row.lastFollowUpDate),
     nextFollowUpDate: toDateOnly(row.nextFollowUpDate),
     calendarStatus: calculateCalendarStatus(row.nextFollowUpDate),
+    observations: row.observations,
+    category: row.category,
     subprocess: row.subprocess,
   }
 }
@@ -70,7 +89,6 @@ function serializeList(row: ListRow) {
 function serializeDetail(row: DetailRow) {
   return {
     ...serializeList(row),
-    observations: row.observations,
     archivedAt: row.archivedAt,
     archiveReason: row.archiveReason,
     archivedBy: row.archivedBy,
@@ -80,6 +98,15 @@ function serializeDetail(row: DetailRow) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     followUpCount: row._count.followUps,
+    riskEvaluations: row.riskEvaluations.map((evaluation) => ({
+      id: evaluation.id,
+      decision: evaluation.decision,
+      evaluatedAt: toDateOnly(evaluation.evaluatedAt),
+      nextFollowUpDate: toDateOnly(evaluation.nextFollowUpDate),
+      notes: evaluation.notes,
+      createdAt: evaluation.createdAt,
+      createdBy: evaluation.createdBy,
+    })),
   }
 }
 
@@ -142,6 +169,7 @@ export class CounterpartiesService {
     const subprocess = await this.ensureSubprocessAvailable(
       dto.subprocessId,
     )
+    const categoryId = await this.resolveCategoryId(dto.categoryKey)
 
     const today = getBusinessToday()
     const registrationDate = dto.registrationDate
@@ -167,6 +195,7 @@ export class CounterpartiesService {
           nitNormalized,
           businessName: dto.businessName,
           observations: dto.observations ?? null,
+          categoryId,
           subprocessId: subprocess.id,
           registrationDate,
           nextFollowUpDate,
@@ -194,6 +223,7 @@ export class CounterpartiesService {
       details: {
         nit,
         businessName: dto.businessName,
+        categoryId,
         subprocessId: subprocess.id,
         registrationDate: toDateOnly(registrationDate),
         nextFollowUpDate: toDateOnly(nextFollowUpDate),
@@ -291,6 +321,117 @@ export class CounterpartiesService {
     return this.findOne(id)
   }
 
+  async evaluateRisk(
+    id: string,
+    dto: EvaluateRiskDto,
+    actorId: string,
+  ) {
+    const current = await this.prisma.counterparty.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        nit: true,
+        businessName: true,
+        status: true,
+      },
+    })
+
+    if (!current) {
+      throw new NotFoundException('Contraparte no encontrada')
+    }
+
+    if (current.status === CounterpartyStatus.ARCHIVED) {
+      throw new BadRequestException(
+        'La contraparte está archivada; debe reactivarla antes de evaluarla',
+      )
+    }
+
+    const today = getBusinessToday()
+    const evaluatedAt = dto.evaluatedAt
+      ? parseDateOnly(dto.evaluatedAt)
+      : today
+
+    if (evaluatedAt.getTime() > today.getTime()) {
+      throw new BadRequestException(
+        'La fecha de evaluación no puede ser futura',
+      )
+    }
+
+    const duplicate = await this.prisma.riskEvaluation.findFirst({
+      where: {
+        counterpartyId: id,
+        decision: dto.decision,
+        evaluatedAt,
+      },
+      select: { id: true },
+    })
+
+    if (duplicate) {
+      throw new ConflictException(
+        'Ya se registró una evaluación con esta decisión en la fecha indicada',
+      )
+    }
+
+    const notes = dto.notes ?? null
+    const nextFollowUpDate =
+      dto.decision === RiskDecision.CONTINUE
+        ? addMonths(evaluatedAt, 6)
+        : null
+
+    await this.prisma.counterparty.update({
+      where: { id },
+      data:
+        dto.decision === RiskDecision.CONTINUE
+          ? {
+              status: CounterpartyStatus.ACTIVE,
+              lastFollowUpDate: evaluatedAt,
+              nextFollowUpDate,
+            }
+          : {
+              status: CounterpartyStatus.ARCHIVED,
+              lastFollowUpDate: evaluatedAt,
+              archivedAt: new Date(),
+              archivedById: actorId,
+              archiveReason:
+                notes ?? 'La contraparte ya no presenta riesgo',
+              reactivatedAt: null,
+              reactivatedById: null,
+              reactivationReason: null,
+            },
+    })
+
+    await this.prisma.riskEvaluation.create({
+      data: {
+        counterpartyId: id,
+        decision: dto.decision,
+        evaluatedAt,
+        nextFollowUpDate,
+        notes,
+        createdById: actorId,
+      },
+    })
+
+    await this.audit.record({
+      userId: actorId,
+      action:
+        dto.decision === RiskDecision.CONTINUE
+          ? 'COUNTERPARTY_RISK_CONTINUED'
+          : 'COUNTERPARTY_RISK_ARCHIVED',
+      entity: 'Counterparty',
+      entityId: id,
+      details: {
+        nit: current.nit,
+        businessName: current.businessName,
+        decision: dto.decision,
+        evaluatedAt: toDateOnly(evaluatedAt),
+        nextFollowUpDate: toDateOnly(nextFollowUpDate),
+        notes,
+      },
+    })
+
+    return this.findOne(id)
+  }
+
   async archive(
     id: string,
     dto: CounterpartyActionDto,
@@ -365,9 +506,10 @@ export class CounterpartiesService {
       throw new BadRequestException('La contraparte ya está activa')
     }
 
+    const evaluatedAt = getBusinessToday()
     const nextFollowUpDate = dto.nextFollowUpDate
       ? parseDateOnly(dto.nextFollowUpDate)
-      : undefined
+      : addMonths(evaluatedAt, 6)
 
     await this.prisma.counterparty.update({
       where: { id },
@@ -380,6 +522,17 @@ export class CounterpartiesService {
       },
     })
 
+    await this.prisma.riskEvaluation.create({
+      data: {
+        counterpartyId: id,
+        decision: RiskDecision.REACTIVATE,
+        evaluatedAt,
+        nextFollowUpDate,
+        notes: dto.reason,
+        createdById: actorId,
+      },
+    })
+
     await this.audit.record({
       userId: actorId,
       action: 'COUNTERPARTY_REACTIVATED',
@@ -388,6 +541,7 @@ export class CounterpartiesService {
       details: {
         nit: current.nit,
         businessName: current.businessName,
+        decision: RiskDecision.REACTIVATE,
         reason: dto.reason,
         nextFollowUpDate: toDateOnly(nextFollowUpDate),
       },
@@ -404,6 +558,10 @@ export class CounterpartiesService {
 
     if (query.status) {
       where.status = query.status
+    }
+
+    if (query.category) {
+      where.category = { key: query.category }
     }
 
     if (query.subprocessId) {
@@ -455,6 +613,22 @@ export class CounterpartiesService {
     }
 
     return where
+  }
+
+  private async resolveCategoryId(key?: string): Promise<string> {
+    const resolvedKey = key?.trim() || DEFAULT_CATEGORY_KEY
+    const category = await this.prisma.category.findUnique({
+      where: { key: resolvedKey },
+      select: { id: true, active: true },
+    })
+
+    if (!category || !category.active) {
+      throw new BadRequestException(
+        'La categoría seleccionada no está disponible',
+      )
+    }
+
+    return category.id
   }
 
   private async ensureNitAvailable(nitNormalized: string): Promise<void> {

@@ -35,7 +35,7 @@ describe('AllExceptionsFilter', () => {
   it('normalizes validation errors and adds request metadata', () => {
     const filter = new AllExceptionsFilter()
     const { host, status, json } = createHost(
-      '/api/dashboard/attention?page=0',
+      '/api/users?page=0',
     )
 
     filter.catch(
@@ -49,7 +49,7 @@ describe('AllExceptionsFilter', () => {
         statusCode: 400,
         message: ['La página debe ser mayor o igual a 1'],
         error: 'Bad Request',
-        path: '/api/dashboard/attention?page=0',
+        path: '/api/users?page=0',
       }),
     )
     expect(

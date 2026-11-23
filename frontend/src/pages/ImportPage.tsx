@@ -406,15 +406,15 @@ export function ImportPage() {
       )}
 
       {success && (
-        <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
           <span>{success}</span>
         </div>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-6">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5 p-6">
         <div className="flex items-center gap-2">
-          <FileSpreadsheet className="size-5 text-slate-500" />
+          <FileSpreadsheet className="size-5 text-amber-600" />
           <h2 className="text-base font-semibold text-slate-900">
             Cargar archivos
           </h2>
@@ -433,7 +433,7 @@ export function ImportPage() {
             accept=".xlsx,.xlsm"
             multiple
             onChange={handleFileChange}
-            className="block w-full cursor-pointer rounded-md border border-slate-300 bg-white text-sm text-slate-600 file:mr-4 file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-800"
+            className="block w-full cursor-pointer rounded-md border border-slate-200 bg-white text-sm text-slate-600 file:mr-4 file:border-0 file:bg-emerald-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-950"
           />
           <button
             type="button"
@@ -479,7 +479,7 @@ export function ImportPage() {
             </div>
           )}
 
-          <section className="rounded-xl border border-slate-200 bg-white p-6">
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5 p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -500,7 +500,7 @@ export function ImportPage() {
               </div>
             </div>
 
-            <div className="mt-4 space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+            <div className="mt-4 space-y-2 rounded-lg bg-amber-50 p-3 text-xs text-slate-600">
               {batch.files.map((file) => (
                 <div key={file.fileName}>
                   <p className="font-medium text-slate-700">
@@ -577,7 +577,7 @@ export function ImportPage() {
                       )
                     }
                     disabled={isConfirmed || isConfirming}
-                    className="mt-0.5 size-4 rounded border-slate-300"
+                    className="mt-0.5 size-4 rounded border-slate-200"
                   />
                   <span>
                     Crear los subprocesos que no existan en el catálogo
@@ -595,7 +595,7 @@ export function ImportPage() {
                       )
                     }
                     disabled={isConfirmed || isConfirming}
-                    className="mt-0.5 size-4 rounded border-slate-300"
+                    className="mt-0.5 size-4 rounded border-slate-200"
                   />
                   <span>
                     Autorizar la actualización de fechas en
@@ -658,7 +658,7 @@ export function ImportPage() {
           </section>
 
           {validation && (
-            <section className="rounded-xl border border-slate-200 bg-white">
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
               <div className="border-b border-slate-200 p-5">
                 <h2 className="text-base font-semibold text-slate-900">
                   Vista previa
@@ -692,7 +692,7 @@ export function ImportPage() {
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className="rounded-lg bg-slate-50 p-3"
+                      className="rounded-lg bg-amber-50 p-3"
                     >
                       <p className="text-xs text-slate-500">
                         {item.label}
@@ -717,7 +717,7 @@ export function ImportPage() {
 
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                     <tr>
                       <th className="px-4 py-3">Ubicación</th>
                       <th className="px-4 py-3">NIT</th>
@@ -827,7 +827,7 @@ export function ImportPage() {
 
           {result && (
             <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-              <div className="flex items-center gap-2 text-emerald-800">
+              <div className="flex items-center gap-2 text-slate-700">
                 <CheckCircle2 className="size-5" />
                 <h2 className="text-base font-semibold">
                   Importación confirmada
@@ -846,10 +846,10 @@ export function ImportPage() {
                     key={label}
                     className="rounded-lg bg-white/70 p-3"
                   >
-                    <p className="text-xs text-emerald-700">
+                    <p className="text-xs text-slate-600">
                       {label}
                     </p>
-                    <p className="mt-1 text-lg font-semibold text-emerald-900">
+                    <p className="mt-1 text-lg font-semibold text-slate-800">
                       {value}
                     </p>
                   </div>
@@ -860,7 +860,7 @@ export function ImportPage() {
         </>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
         <div className="flex flex-col gap-2 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-slate-900">
@@ -904,7 +904,7 @@ export function ImportPage() {
           <>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <tr>
                     <th className="px-4 py-3">Archivo</th>
                     <th className="px-4 py-3">Fecha</th>

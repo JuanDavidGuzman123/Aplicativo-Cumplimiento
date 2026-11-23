@@ -8,13 +8,16 @@ import {
   parseDateOnly,
   toDateOnly,
 } from '../common/utils/dates.js'
+import { normalizeSemiannualFollowUp } from '../annual-updates/annual-parser.js'
 import { ExternalAnnualMapperService } from './external-annual-mapper.service.js'
 import { ExternalDataCacheService } from './external-data.cache.service.js'
 import { ExternalDataConfigService } from './external-data.config.service.js'
 import { ExternalWorkbookReaderService } from './external-workbook-reader.service.js'
 import type {
+  ExternalAnnualMapping,
   ExternalAnnualRow,
   ExternalDataStatus,
+  ExternalImportHeader,
   ExternalDueQuery,
   ExternalDueSummary,
   ExternalListQuery,
@@ -23,8 +26,10 @@ import type {
   ExternalReminderType,
   ExternalReport,
   ExternalReportMetric,
+  ExternalSource,
   ExternalSummary,
   ExternalUpdateDueRow,
+  ExternalWorkbookData,
   ExternalUpdateSituation,
 } from './types.js'
 
@@ -55,11 +60,6 @@ const reportCopy: Record<
     subtitle: (count, currentYear) =>
       `${count} activos · diligenciamiento desde ${currentYear - 1}`,
   },
-  'pending-inactive': {
-    title: () => 'Pendientes de actualizar (inactivos)',
-    subtitle: (count, currentYear) =>
-      `${count} inactivos · sin actualización en ${currentYear}`,
-  },
   'follow-up': {
     title: () => 'Contrapartes en seguimiento',
     subtitle: (count) =>
@@ -75,8 +75,11 @@ const reportCopy: Record<
 @Injectable()
 export class ExternalDataService implements OnModuleInit {
   private readonly logger = new Logger(ExternalDataService.name)
-  private refreshPromise: Promise<ExternalDataStatus> | null = null
-  private pendingRefresh = false
+  private readonly refreshPromises = new Map<
+    ExternalSource,
+    Promise<ExternalDataStatus>
+  >()
+  private readonly pendingRefreshes = new Set<ExternalSource>()
 
   constructor(
     private readonly config: ExternalDataConfigService,
@@ -86,52 +89,83 @@ export class ExternalDataService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.cache.initialize({
-      enabled: this.config.enabled,
-      configured: this.config.readConfigured,
-      webhookConfigured: this.config.webhookConfigured,
-      pollMs: this.config.pollMs,
-    })
+    this.cache.initialize(
+      {
+        enabled: this.config.enabled,
+        configured: this.config.readConfigured,
+        webhookConfigured: this.config.webhookConfigured,
+        pollMs: this.config.pollMs,
+      },
+      'arriendos',
+    )
+    this.cache.initialize(
+      {
+        enabled: this.config.enabled,
+        configured: this.config.colocadoresReadConfigured,
+        webhookConfigured: false,
+        pollMs: this.config.pollMs,
+      },
+      'colocadores',
+    )
 
     if (this.config.enabled && this.config.readConfigured) {
-      void this.refresh('inicio').catch((error: unknown) => {
-        this.logger.warn(
-          `No se pudo cargar el libro externo al iniciar: ${this.errorMessage(error)}`,
-        )
-      })
-    }
-  }
-
-  getStatus(): ExternalDataStatus {
-    return this.cache.getStatus()
-  }
-
-  async refresh(reason: string): Promise<ExternalDataStatus> {
-    if (!this.config.enabled) {
-      this.cache.setUnconfigured('La integración externa está desactivada')
-      return this.cache.getStatus()
-    }
-
-    if (!this.config.readConfigured) {
-      this.cache.setUnconfigured(
-        this.config.source === 'file'
-          ? 'Falta EXTERNAL_WORKBOOK_PATH para la fuente local'
-          : 'Faltan credenciales o identificadores de Microsoft Graph',
+      void this.refresh('inicio', 'arriendos').catch(
+        (error: unknown) => {
+          this.logger.warn(
+            `No se pudo cargar el libro externo al iniciar: ${this.errorMessage(error)}`,
+          )
+        },
       )
-      return this.cache.getStatus()
     }
 
-    if (this.refreshPromise) {
-      this.pendingRefresh = true
-      return this.refreshPromise
+    if (this.config.colocadoresReadConfigured) {
+      void this.refresh('inicio', 'colocadores').catch(
+        (error: unknown) => {
+          this.logger.warn(
+            `No se pudo cargar el libro de colocadores al iniciar: ${this.errorMessage(error)}`,
+          )
+        },
+      )
+    }
+  }
+
+  getStatus(source: ExternalSource = 'arriendos'): ExternalDataStatus {
+    return this.cache.getStatus(source)
+  }
+
+  async refresh(
+    reason: string,
+    source: ExternalSource = 'arriendos',
+  ): Promise<ExternalDataStatus> {
+    if (!this.config.enabled) {
+      this.cache.setUnconfigured(
+        'La integración externa está desactivada',
+        source,
+      )
+      return this.cache.getStatus(source)
     }
 
-    this.refreshPromise = this.doRefresh(reason).finally(() => {
-      this.refreshPromise = null
+    if (!this.isSourceConfigured(source)) {
+      this.cache.setUnconfigured(
+        this.unconfiguredMessage(source),
+        source,
+      )
+      return this.cache.getStatus(source)
+    }
 
-      if (this.pendingRefresh) {
-        this.pendingRefresh = false
-        void this.refresh('cambios pendientes').catch(
+    const inFlight = this.refreshPromises.get(source)
+
+    if (inFlight) {
+      this.pendingRefreshes.add(source)
+      return inFlight
+    }
+
+    const promise = this.doRefresh(reason, source).finally(() => {
+      this.refreshPromises.delete(source)
+
+      if (this.pendingRefreshes.has(source)) {
+        this.pendingRefreshes.delete(source)
+        void this.refresh('cambios pendientes', source).catch(
           (error: unknown) => {
             this.logger.warn(
               `No se pudo aplicar la recarga pendiente: ${this.errorMessage(error)}`,
@@ -141,13 +175,14 @@ export class ExternalDataService implements OnModuleInit {
       }
     })
 
-    return this.refreshPromise
+    this.refreshPromises.set(source, promise)
+    return promise
   }
 
-  getSummary(): ExternalSummary {
+  getSummary(source: ExternalSource = 'arriendos'): ExternalSummary {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
-    const rows = this.serializedRows(currentYear)
+    const rows = this.serializedRows(currentYear, source)
     const active = rows.filter((row) => row.status === 'ACTIVE')
     const inactive = rows.filter((row) => row.status === 'INACTIVE')
     const updatedThisYear = rows.filter(
@@ -193,7 +228,7 @@ export class ExternalDataService implements OnModuleInit {
         inactive: {
           total: inactive.length,
           updatedThisYear: inactiveUpdated,
-          pendingUpdate: inactive.length - inactiveUpdated,
+          pendingUpdate: 0,
           withoutDate: inactive.filter(
             (row) => row.annualStatus === 'NO_DATE',
           ).length,
@@ -207,10 +242,13 @@ export class ExternalDataService implements OnModuleInit {
     }
   }
 
-  getReport(metric: ExternalReportMetric): ExternalReport {
+  getReport(
+    metric: ExternalReportMetric,
+    source: ExternalSource = 'arriendos',
+  ): ExternalReport {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
-    const dueRows = this.serializedRows(currentYear).map((row) =>
+    const dueRows = this.serializedRows(currentYear, source).map((row) =>
       this.toDueRow(row, today),
     )
     const minimumDate = new Date(Date.UTC(currentYear - 1, 0, 1))
@@ -232,12 +270,6 @@ export class ExternalDataService implements OnModuleInit {
             row.status === 'ACTIVE' &&
             this.isRecentFiling(row, currentYear) &&
             !row.updatedThisYear,
-        )
-        break
-      case 'pending-inactive':
-        rows = dueRows.filter(
-          (row) =>
-            row.status === 'INACTIVE' && !row.updatedThisYear,
         )
         break
       case 'follow-up':
@@ -277,15 +309,69 @@ export class ExternalDataService implements OnModuleInit {
     }
   }
 
-  getPendingActiveReport(): ExternalPendingActiveReport {
-    return this.getReport('pending-active')
+  getPendingActiveReport(
+    source: ExternalSource = 'arriendos',
+  ): ExternalPendingActiveReport {
+    return this.getReport('pending-active', source)
   }
 
-  findAll(query: ExternalListQuery) {
+  getAllRows(source: ExternalSource = 'arriendos'): ExternalAnnualRow[] {
+    return this.serializedRows(
+      getBusinessToday().getUTCFullYear(),
+      source,
+    )
+  }
+
+  getAllColocadoresRows(): ExternalAnnualRow[] {
+    return this.getAllRows('colocadores')
+  }
+
+  async getColocadoresFollowUpRows(): Promise<ExternalAnnualRow[]> {
+    const workbook = await this.reader.readWorkbook(
+      this.config.colocadoresWorkbookPath,
+      this.config.colocadoresWorksheetName,
+    )
+    const normalize = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+    const followUpIndex = workbook.headers.findIndex(
+      (header) =>
+        normalize(header.label || header.value).startsWith(
+          'seguimiento',
+        ),
+    )
+    const filtered = {
+      ...workbook,
+      rows: workbook.rows.filter(
+        (row) =>
+          followUpIndex >= 0 &&
+          normalizeSemiannualFollowUp(
+            row.values[followUpIndex] ?? '',
+          ) === true,
+      ),
+    }
+    const prepared = this.prepareColocadoresAnnualWorkbook(filtered)
+    const mapping = this.colocadoresAnnualMapping(prepared.headers)
+
+    return this.mapper.mapWorkbook(
+      prepared,
+      mapping,
+      new Date().toISOString(),
+    ).rows
+  }
+
+  findAll(
+    query: ExternalListQuery,
+    source: ExternalSource = 'arriendos',
+  ) {
     const currentYear = getBusinessToday().getUTCFullYear()
     const code = query.code?.trim().toLowerCase() ?? ''
     const search = query.search?.trim().toLowerCase() ?? ''
-    let rows = this.serializedRows(currentYear)
+    let rows = this.serializedRows(currentYear, source)
 
     if (code) {
       rows = rows.filter((row) => row.code.toLowerCase() === code)
@@ -327,14 +413,17 @@ export class ExternalDataService implements OnModuleInit {
       return nameCompare || first.code.localeCompare(second.code)
     })
 
-    return this.paginate(rows, query.page, query.pageSize)
+    return this.paginate(rows, query.page, query.pageSize, source)
   }
 
-  getUpdatesDue(query: ExternalDueQuery) {
+  getUpdatesDue(
+    query: ExternalDueQuery,
+    source: ExternalSource = 'arriendos',
+  ) {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
     const minimumDate = new Date(Date.UTC(currentYear - 1, 0, 1))
-    const evaluated = this.serializedRows(currentYear)
+    const evaluated = this.serializedRows(currentYear, source)
       .filter(
         (row) =>
           row.status === 'ACTIVE' &&
@@ -371,22 +460,43 @@ export class ExternalDataService implements OnModuleInit {
     }
 
     return {
-      ...this.paginate(evaluated, query.page, query.pageSize),
+      ...this.paginate(evaluated, query.page, query.pageSize, source),
       summary,
     }
   }
 
-  private async doRefresh(reason: string): Promise<ExternalDataStatus> {
-    this.cache.setSyncing()
+  private async doRefresh(
+    reason: string,
+    source: ExternalSource,
+  ): Promise<ExternalDataStatus> {
+    this.cache.setSyncing(source)
 
     try {
-      const workbook = await this.reader.read()
-      const resolved = this.mapper.resolveMapping(
-        workbook,
-        this.config.rawColumnMap,
-      )
+      const workbook =
+        source === 'colocadores'
+          ? await this.reader.readWorkbook(
+              this.config.colocadoresWorkbookPath,
+              this.config.colocadoresWorksheetName,
+            )
+          : await this.reader.read()
+      const sourceWorkbook =
+        source === 'colocadores'
+          ? this.prepareColocadoresAnnualWorkbook(workbook)
+          : workbook
+      const resolved =
+        source === 'colocadores'
+          ? {
+              mapping: this.colocadoresAnnualMapping(
+                sourceWorkbook.headers,
+              ),
+              errors: [] as string[],
+            }
+          : this.mapper.resolveMapping(
+              sourceWorkbook,
+              this.config.rawColumnMap,
+            )
       const mapped = this.mapper.mapWorkbook(
-        workbook,
+        sourceWorkbook,
         resolved.mapping,
         new Date().toISOString(),
       )
@@ -396,39 +506,43 @@ export class ExternalDataService implements OnModuleInit {
       ]
 
       if (mappingErrors.length > 0) {
-        this.cache.setError(mappingErrors.join('. '))
-        return this.cache.getStatus()
+        this.cache.setError(mappingErrors.join('. '), source)
+        return this.cache.getStatus(source)
       }
 
       this.cache.setSuccess({
         rows: mapped.rows,
         mapping: mapped.mapping,
         mappingErrors,
-        headers: workbook.headers,
+        headers: sourceWorkbook.headers,
         version: workbook.version,
         fileName: workbook.fileName,
         sourceName: workbook.sourceName,
         sourceUrl: workbook.sourceUrl,
         lastModifiedDateTime: workbook.lastModifiedDateTime,
         stats: mapped.stats,
+        source,
       })
 
       this.logger.log(
-        `Libro externo sincronizado (${reason}): ${mapped.rows.length} registros`,
+        `Libro ${source} sincronizado (${reason}): ${mapped.rows.length} registros`,
       )
-      return this.cache.getStatus()
+      return this.cache.getStatus(source)
     } catch (error: unknown) {
       const message = this.errorMessage(error)
-      this.cache.setError(message)
+      this.cache.setError(message, source)
       this.logger.error(
-        `Fallo la sincronización externa (${reason}): ${message}`,
+        `Fallo la sincronización de ${source} (${reason}): ${message}`,
       )
-      return this.cache.getStatus()
+      return this.cache.getStatus(source)
     }
   }
 
-  private serializedRows(currentYear: number): ExternalAnnualRow[] {
-    const rows = this.cache.getSnapshot()?.rows ?? []
+  private serializedRows(
+    currentYear: number,
+    source: ExternalSource,
+  ): ExternalAnnualRow[] {
+    const rows = this.cache.getSnapshot(source)?.rows ?? []
 
     return rows.map((row) => {
       const updatedThisYear = this.updatedInYear(row, currentYear)
@@ -547,6 +661,7 @@ export class ExternalDataService implements OnModuleInit {
     rows: T[],
     page: number,
     pageSize: number,
+    source: ExternalSource,
   ): {
     data: T[]
     meta: ExternalMeta
@@ -562,7 +677,75 @@ export class ExternalDataService implements OnModuleInit {
         total,
         totalPages: Math.ceil(total / pageSize),
       },
-      status: this.cache.getStatus(),
+      status: this.cache.getStatus(source),
+    }
+  }
+
+  private isSourceConfigured(source: ExternalSource): boolean {
+    return source === 'colocadores'
+      ? this.config.colocadoresReadConfigured
+      : this.config.readConfigured
+  }
+
+  private unconfiguredMessage(source: ExternalSource): string {
+    if (source === 'colocadores') {
+      return 'Falta EXTERNAL_COLOCADORES_WORKBOOK_PATH para leer FR-SG-81'
+    }
+    return this.config.source === 'file'
+      ? 'Falta EXTERNAL_WORKBOOK_PATH para la fuente local'
+      : 'Faltan credenciales o identificadores de Microsoft Graph'
+  }
+
+  private prepareColocadoresAnnualWorkbook(
+    workbook: ExternalWorkbookData,
+  ): ExternalWorkbookData {
+    return {
+      ...workbook,
+      headers: [
+        ...workbook.headers,
+        { value: '__annual_status', label: 'Estado anual' },
+      ],
+      rows: workbook.rows.map((row) => ({
+        ...row,
+        values: [...row.values, 'A'],
+      })),
+    }
+  }
+
+  private colocadoresAnnualMapping(
+    headers: ExternalImportHeader[],
+  ): ExternalAnnualMapping {
+    const find = (...aliases: string[]): string | null => {
+      for (const alias of aliases) {
+        const header = headers.find(
+          (item) =>
+            item.value === alias ||
+            item.label.trim().toLowerCase() === alias,
+        )
+        if (header) {
+          return header.value
+        }
+      }
+      return null
+    }
+    const document = find('numero de documento', 'nit')
+    const followUp = find('seguimiento si no', 'seguimiento')
+    const filingDate = find(
+      'fecha debida diligencia',
+      'fecha de debida diligencia',
+    )
+    const observations = find('observaciones', 'observacion')
+
+    return {
+      code: document,
+      nit: document,
+      businessName: find('nombres y apellidos', 'nombre', 'razon social'),
+      status: find('__annual_status', 'estado anual'),
+      filingDate,
+      filingYear: null,
+      dueDiligenceType: find('categoria', 'categoria de la contraparte'),
+      requiresSemiannualFollowUp: followUp,
+      observations,
     }
   }
 

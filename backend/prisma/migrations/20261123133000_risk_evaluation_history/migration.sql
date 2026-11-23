@@ -1,0 +1,1 @@
+DROP INDEX "RiskEvaluation_counterpartyId_decision_evaluatedAt_key";

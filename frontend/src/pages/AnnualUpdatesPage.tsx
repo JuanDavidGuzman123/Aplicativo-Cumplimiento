@@ -39,6 +39,7 @@ import type {
   ExternalAnnualListResponse as AnnualUpdateListResponse,
   ExternalReminderType as AnnualReminderType,
   ExternalReportMetric,
+  ExternalSource,
   ExternalSummary as AnnualUpdateSummary,
   ExternalUpdateFilter as AnnualUpdateFilter,
   ExternalUpdateSituation as AnnualUpdateSituation,
@@ -50,23 +51,35 @@ import {
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
+  successButtonClass,
+  successButtonSmallClass,
 } from '../utils/styles'
 
 const PAGE_SIZE = 15
 const DUE_PAGE_SIZE = 10
 
+const sourceCopy: Record<
+  ExternalSource,
+  { title: string; description: string }
+> = {
+  arriendos: {
+    title: 'Actualizacion Anual Arriendos',
+    description:
+      'Consulte el estado de la actualización anual de los puntos de venta y sus vencimientos desde el libro externo. Este proceso es independiente del seguimiento semestral.',
+  },
+}
+
 const reportLabels: Record<ExternalReportMetric, string> = {
-  active: 'Reporte activos',
-  inactive: 'Reporte inactivos',
-  'updated-this-year': 'Reporte actualizados',
-  'pending-active': 'Reporte pendientes',
-  'pending-inactive': 'Pendientes inactivos',
-  'follow-up': 'Reporte seguimiento',
-  'updates-due': 'Reporte vencimientos',
+  active: 'Descargar activos',
+  inactive: 'Descargar inactivos',
+  'updated-this-year': 'Descargar actualizados',
+  'pending-active': 'Descargar pendientes',
+  'follow-up': 'Descargar seguimiento',
+  'updates-due': 'Descargar vencimientos',
 }
 
 const sectionClass =
-  'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm'
+  'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5'
 
 const sectionHeaderClass =
   'flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between'
@@ -159,7 +172,14 @@ function formatDays(days: number | null): string {
   return `${days} día${days === 1 ? '' : 's'}`
 }
 
-export function AnnualUpdatesPage() {
+type AnnualUpdatesPageProps = {
+  source?: ExternalSource
+}
+
+export function AnnualUpdatesPage({
+  source = 'arriendos',
+}: AnnualUpdatesPageProps) {
+  const pageCopy = sourceCopy[source]
   const [searchParams, setSearchParams] = useSearchParams()
   const codeFromNotification = searchParams.get('code') ?? ''
   const [fallbackYear] = useState(() =>
@@ -239,12 +259,12 @@ export function AnnualUpdatesPage() {
     status: externalStatus,
     setStatus: setExternalStatus,
     connected,
-  } = useExternalDataEvents(refreshAll)
+  } = useExternalDataEvents(refreshAll, source)
 
   useEffect(() => {
     let active = true
 
-    getExternalSummary()
+    getExternalSummary(source)
       .then((data) => {
         if (!active) {
           return
@@ -272,7 +292,7 @@ export function AnnualUpdatesPage() {
     return () => {
       active = false
     }
-  }, [summaryRefreshKey])
+  }, [source, summaryRefreshKey])
 
   const effectiveListParams = useMemo(
     () =>
@@ -290,10 +310,13 @@ export function AnnualUpdatesPage() {
   useEffect(() => {
     let active = true
 
-    getExternalUpdates({
-      ...effectiveListParams,
-      pageSize: PAGE_SIZE,
-    })
+    getExternalUpdates(
+      {
+        ...effectiveListParams,
+        pageSize: PAGE_SIZE,
+      },
+      source,
+    )
       .then((data) => {
         if (!active) {
           return
@@ -322,15 +345,18 @@ export function AnnualUpdatesPage() {
     return () => {
       active = false
     }
-  }, [effectiveListParams, listRefreshKey, setExternalStatus])
+  }, [effectiveListParams, listRefreshKey, setExternalStatus, source])
 
   useEffect(() => {
     let active = true
 
-    getExternalUpdatesDue({
-      page: duePage,
-      pageSize: DUE_PAGE_SIZE,
-    })
+    getExternalUpdatesDue(
+      {
+        page: duePage,
+        pageSize: DUE_PAGE_SIZE,
+      },
+      source,
+    )
       .then((data) => {
         if (!active) {
           return
@@ -359,7 +385,7 @@ export function AnnualUpdatesPage() {
     return () => {
       active = false
     }
-  }, [duePage, dueRefreshKey, setExternalStatus])
+  }, [duePage, dueRefreshKey, setExternalStatus, source])
 
   useEffect(() => {
     if (!codeFromNotification) {
@@ -379,7 +405,7 @@ export function AnnualUpdatesPage() {
     setReportError('')
 
     try {
-      await downloadExternalReport(metric)
+      await downloadExternalReport(metric, source)
     } catch (reportFailure) {
       setReportError(
         getApiErrorMessage(
@@ -399,7 +425,7 @@ export function AnnualUpdatesPage() {
           value: summary.totals.active,
           hint: `${summary.totals.inactive} inactivos`,
           icon: Building2,
-          iconClass: 'bg-slate-900 text-white',
+          iconClass: 'bg-emerald-900 text-white',
           reports: ['active'],
         },
         {
@@ -407,15 +433,15 @@ export function AnnualUpdatesPage() {
           value: summary.totals.inactive,
           hint: 'Solo para conteo',
           icon: Ban,
-          iconClass: 'bg-slate-100 text-slate-600',
-          reports: ['inactive', 'pending-inactive'],
+          iconClass: 'bg-amber-50 text-amber-700',
+          reports: ['inactive'],
         },
         {
           label: `Actualizados en ${currentYear}`,
           value: summary.annual.updatedThisYear,
           hint: `${summary.annual.active.updatedThisYear} activos / ${summary.annual.inactive.updatedThisYear} inactivos`,
           icon: CalendarCheck,
-          iconClass: 'bg-emerald-50 text-emerald-600',
+          iconClass: 'bg-amber-100 text-emerald-900',
           reports: ['updated-this-year'],
         },
           {
@@ -431,7 +457,7 @@ export function AnnualUpdatesPage() {
           value: summary.semiannual.totalWithFollowUp,
           hint: `${summary.semiannual.activeWithFollowUp} activos / ${summary.semiannual.inactiveWithFollowUp} inactivos`,
           icon: Users,
-          iconClass: 'bg-blue-50 text-blue-600',
+          iconClass: 'bg-amber-100 text-emerald-900',
           reports: ['follow-up'],
         },
       ]
@@ -487,7 +513,7 @@ export function AnnualUpdatesPage() {
     setSyncError('')
 
     try {
-      const nextStatus = await syncExternalData()
+      const nextStatus = await syncExternalData(source)
       setExternalStatus(nextStatus)
       refreshAll()
     } catch (syncFailure) {
@@ -508,12 +534,10 @@ export function AnnualUpdatesPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">
-              Actualización anual
+              {pageCopy.title}
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-600">
-              Consulte el estado de la actualización anual de los puntos
-              de venta y sus vencimientos desde el libro externo. Este
-              proceso es independiente del seguimiento semestral.
+              {pageCopy.description}
             </p>
           </div>
           <ExternalDataStatusBadge
@@ -562,7 +586,7 @@ export function AnnualUpdatesPage() {
               }) => (
                 <div
                   key={label}
-                  className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                  className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-900/5"
                 >
                   <span
                     className={`flex size-9 items-center justify-center rounded-lg ${iconClass}`}
@@ -572,7 +596,7 @@ export function AnnualUpdatesPage() {
                   <p className="mt-4 text-2xl font-semibold text-slate-900">
                     {value}
                   </p>
-                  <p className="mt-1 text-sm font-medium text-slate-700">
+                  <p className="mt-1 text-sm font-medium text-slate-800">
                     {label}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
@@ -588,7 +612,7 @@ export function AnnualUpdatesPage() {
                             void handleReport(metric)
                           }}
                           disabled={reportLoading}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 transition hover:text-slate-900 disabled:opacity-60"
+                          className={successButtonSmallClass}
                         >
                           <Download
                             className={`size-3.5 ${
@@ -616,7 +640,7 @@ export function AnnualUpdatesPage() {
         )}
 
         {summary && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-medium">
               Corte al {formatDate(summary.businessDate)} · Año{' '}
               {summary.currentYear}
@@ -633,7 +657,7 @@ export function AnnualUpdatesPage() {
       <section id="puntos-anuales" className={`${sectionClass} scroll-mt-6`}>
         <div className={sectionHeaderClass}>
           <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-emerald-900">
               <Building2 className="size-5" />
             </span>
             <div>
@@ -806,7 +830,7 @@ export function AnnualUpdatesPage() {
           <>
             <div className="overflow-x-auto">
               <table className="min-w-[1100px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <tr>
                     <th className="px-4 py-3">Código</th>
                     <th className="px-4 py-3">Nombre</th>
@@ -910,7 +934,7 @@ export function AnnualUpdatesPage() {
               <h2 className="text-base font-semibold text-slate-900">
                 Actualizaciones vencidas y por vencer
               </h2>
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 text-xs text-slate-500">
                 Solo contrapartes activas con diligenciamiento desde{' '}
                 {minimumDueYear}. La fecha límite es la fecha de
                 diligenciamiento más un año; los recordatorios se envían
@@ -925,7 +949,7 @@ export function AnnualUpdatesPage() {
                 void handleReport('updates-due')
               }}
               disabled={reportLoading}
-              className={secondaryButtonClass}
+              className={successButtonClass}
             >
               <Download
                 className={`size-4 ${
@@ -970,7 +994,7 @@ export function AnnualUpdatesPage() {
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="rounded-lg bg-slate-50 p-3"
+                className="rounded-lg bg-amber-50 p-3"
               >
                 <p className="text-xs text-slate-500">{label}</p>
                 <p className="mt-1 text-xl font-semibold text-slate-900">
@@ -1001,7 +1025,7 @@ export function AnnualUpdatesPage() {
           <>
             <div className="overflow-x-auto">
               <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <tr>
                     <th className="px-4 py-3">Código</th>
                     <th className="px-4 py-3">Nombre</th>
@@ -1039,7 +1063,7 @@ export function AnnualUpdatesPage() {
                           }
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-600">
+                      <td className="px-4 py-3 text-xs text-slate-500">
                         {row.reminderType
                           ? annualReminderLabels[row.reminderType]
                           : '—'}
@@ -1064,14 +1088,14 @@ export function AnnualUpdatesPage() {
 
       <section className={`${sectionClass} p-5`}>
         <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-emerald-900">
             <ArrowRight className="size-4" />
           </span>
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
               Proceso independiente
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-sm text-slate-500">
               Los datos se leen desde el libro externo y no se escriben
               de vuelta en él. La actualización anual genera
               recordatorios propios y no modifica las fechas del

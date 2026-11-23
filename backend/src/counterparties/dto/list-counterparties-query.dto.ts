@@ -25,6 +25,14 @@ export class ListCounterpartiesQueryDto {
   @MaxLength(150, { message: 'La búsqueda es demasiado larga' })
   search?: string
 
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsString({ message: 'La categoría no es válida' })
+  @MaxLength(64, { message: 'La categoría no es válida' })
+  category?: string
+
   @IsOptional()
   @IsUUID('all', { message: 'El subproceso no es válido' })
   subprocessId?: string

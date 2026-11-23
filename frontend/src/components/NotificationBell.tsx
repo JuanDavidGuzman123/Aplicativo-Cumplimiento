@@ -219,7 +219,7 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={handleToggle}
-        className="relative rounded-md p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+        className="relative rounded-md p-2 text-slate-600 transition hover:bg-amber-50 hover:text-slate-900"
         aria-label={
           unreadCount > 0
             ? `Notificaciones, ${unreadCount} sin leer`
@@ -237,7 +237,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">
@@ -256,7 +256,7 @@ export function NotificationBell() {
                 void load()
               }}
               disabled={isLoading}
-              className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60"
+              className="rounded-md p-1.5 text-slate-500 transition hover:bg-amber-50 hover:text-slate-900 disabled:opacity-60"
               aria-label="Actualizar notificaciones"
             >
               <RefreshCw
@@ -292,7 +292,7 @@ export function NotificationBell() {
               </div>
             ) : notifications.length === 0 ? (
               <div className="px-4 py-10 text-center">
-                <Bell className="mx-auto size-8 text-slate-300" />
+                <Bell className="mx-auto size-8 text-amber-300" />
                 <p className="mt-2 text-sm font-medium text-slate-900">
                   No hay notificaciones
                 </p>
@@ -310,15 +310,15 @@ export function NotificationBell() {
                         void handleSelect(notification)
                       }}
                       disabled={markingId === notification.id}
-                      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 disabled:opacity-70 ${
-                        notification.read ? 'bg-white' : 'bg-blue-50/60'
+                      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-amber-50/60 disabled:opacity-70 ${
+                        notification.read ? 'bg-white' : 'bg-amber-50/70'
                       }`}
                     >
                       <span
                         className={`mt-1.5 size-2 shrink-0 rounded-full ${
                           notification.read
-                            ? 'bg-slate-300'
-                            : 'bg-blue-600'
+                            ? 'bg-amber-400'
+                            : 'bg-amber-500'
                         }`}
                       />
                       <span className="min-w-0 flex-1">

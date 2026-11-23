@@ -111,14 +111,21 @@ export class NotificationsService {
 
   async findAll(userId: string) {
     const select = notificationListSelect(userId)
+    const activeOnly: Prisma.NotificationWhereInput = {
+      counterparty: { status: CounterpartyStatus.ACTIVE },
+    }
 
     const [rows, unreadCount] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
+        where: activeOnly,
         select,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.notification.count({
-        where: { reads: { none: { userId } } },
+        where: {
+          ...activeOnly,
+          reads: { none: { userId } },
+        },
       }),
     ])
 

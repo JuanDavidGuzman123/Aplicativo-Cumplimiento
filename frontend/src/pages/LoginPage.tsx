@@ -64,10 +64,10 @@ export function LoginPage() {
   })
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-3">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-emerald-900 shadow-sm shadow-slate-900/10">
             <ShieldCheck className="size-6" />
           </span>
           <div>
@@ -78,11 +78,12 @@ export function LoginPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="rounded-xl border border-slate-200 border-t-4 border-t-amber-400 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
           <h2 className="text-xl font-semibold text-slate-900">
             Iniciar sesión
           </h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <div className="mt-3 h-1 w-14 rounded-full bg-amber-400" />
+          <p className="mt-3 text-sm text-slate-600">
             Ingrese con las credenciales asignadas por el administrador.
           </p>
 
@@ -124,7 +125,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute inset-y-0 right-0 mt-1 flex items-center px-3 text-slate-500"
+                  className="absolute inset-y-0 right-0 mt-1 flex items-center px-3 text-slate-400 transition hover:text-amber-600"
                   aria-label={
                     showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
                   }

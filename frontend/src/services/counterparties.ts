@@ -1,11 +1,34 @@
 import { api } from './api'
 import type {
+  CategorySummary,
+  CounterpartySyncResult,
   CounterpartyDetail,
   CounterpartyListResponse,
   CounterpartyQuery,
-  CreateCounterpartyInput,
-  UpdateCounterpartyInput,
+  EvaluateRiskInput,
+  ReactivateCounterpartyInput,
 } from '../types/counterparty'
+
+export async function syncArriendosFromExternal(): Promise<CounterpartySyncResult> {
+  const { data } = await api.post<CounterpartySyncResult>(
+    '/counterparties/sync-arriendos',
+  )
+
+  return data
+}
+
+export async function syncColocadoresFromExternal(): Promise<CounterpartySyncResult> {
+  const { data } = await api.post<CounterpartySyncResult>(
+    '/counterparties/sync-colocadores',
+  )
+
+  return data
+}
+
+export async function getCategories(): Promise<CategorySummary[]> {
+  const { data } = await api.get<CategorySummary[]>('/categories')
+  return data
+}
 
 export async function getCounterparties(
   query: CounterpartyQuery,
@@ -14,6 +37,7 @@ export async function getCounterparties(
     '/counterparties',
     { params: query },
   )
+
   return data
 }
 
@@ -23,49 +47,30 @@ export async function getCounterparty(
   const { data } = await api.get<CounterpartyDetail>(
     `/counterparties/${id}`,
   )
+
   return data
 }
 
-export async function createCounterparty(
-  input: CreateCounterpartyInput,
+export async function evaluateRisk(
+  id: string,
+  input: EvaluateRiskInput,
 ): Promise<CounterpartyDetail> {
   const { data } = await api.post<CounterpartyDetail>(
-    '/counterparties',
+    `/counterparties/${id}/risk-evaluation`,
     input,
   )
-  return data
-}
 
-export async function updateCounterparty(
-  id: string,
-  input: UpdateCounterpartyInput,
-): Promise<CounterpartyDetail> {
-  const { data } = await api.patch<CounterpartyDetail>(
-    `/counterparties/${id}`,
-    input,
-  )
-  return data
-}
-
-export async function archiveCounterparty(
-  id: string,
-  reason: string,
-): Promise<CounterpartyDetail> {
-  const { data } = await api.post<CounterpartyDetail>(
-    `/counterparties/${id}/archive`,
-    { reason },
-  )
   return data
 }
 
 export async function reactivateCounterparty(
   id: string,
-  reason: string,
-  nextFollowUpDate?: string,
+  input: ReactivateCounterpartyInput,
 ): Promise<CounterpartyDetail> {
   const { data } = await api.post<CounterpartyDetail>(
     `/counterparties/${id}/reactivate`,
-    { reason, nextFollowUpDate },
+    input,
   )
+
   return data
 }

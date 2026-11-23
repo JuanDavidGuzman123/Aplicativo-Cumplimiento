@@ -1,3 +1,7 @@
+export const EXTERNAL_SOURCES = ['arriendos', 'colocadores'] as const
+
+export type ExternalSource = (typeof EXTERNAL_SOURCES)[number]
+
 export const EXTERNAL_ANNUAL_STATUSES = ['ACTIVE', 'INACTIVE'] as const
 
 export type ExternalAnnualStatus =
@@ -29,6 +33,7 @@ export type ExternalReminderType =
 export type ExternalAnnualMapping = Partial<
   Record<
     | 'code'
+    | 'nit'
     | 'businessName'
     | 'status'
     | 'filingDate'
@@ -48,6 +53,7 @@ export type ExternalImportHeader = {
 export type ExternalAnnualRow = {
   id: string
   code: string
+  nit: string | null
   businessName: string
   status: ExternalAnnualStatus
   requiresSemiannualFollowUp: boolean | null
@@ -167,6 +173,7 @@ export type ExternalSubscriptionStatus = {
 }
 
 export type ExternalDataStatus = {
+  source: ExternalSource
   enabled: boolean
   configured: boolean
   connection: ExternalConnection
@@ -204,7 +211,6 @@ export const EXTERNAL_REPORT_METRICS = [
   'inactive',
   'updated-this-year',
   'pending-active',
-  'pending-inactive',
   'follow-up',
   'updates-due',
 ] as const
@@ -225,6 +231,7 @@ export type ExternalPendingActiveReport = ExternalReport
 
 export type ExternalStreamEvent = {
   type: 'status' | 'updated' | 'error'
+  source: ExternalSource
   at: string
   status: ExternalDataStatus
   changes?: ExternalSyncStats

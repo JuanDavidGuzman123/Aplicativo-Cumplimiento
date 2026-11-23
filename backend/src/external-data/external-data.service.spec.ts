@@ -62,6 +62,7 @@ function row(code: string, filingDate: string): ExternalAnnualRow {
   return {
     id: `external-${code}`,
     code,
+    nit: `900000${code}`,
     businessName: `Contraparte ${code}`,
     status: 'ACTIVE',
     requiresSemiannualFollowUp: null,
@@ -229,8 +230,44 @@ describe('ExternalDataService', () => {
     expect(codes('inactive')).toEqual(['I', 'PI'])
     expect(codes('updated-this-year')).toEqual(['F', 'I', 'U'])
     expect(codes('pending-active')).toEqual(['PA'])
-    expect(codes('pending-inactive')).toEqual(['PI'])
     expect(codes('follow-up')).toEqual(['F'])
     expect(codes('updates-due')).toEqual(['PA'])
+  })
+
+  it('no cuenta inactivos como pendientes de actualizar', () => {
+    const currentYear = getBusinessToday().getUTCFullYear()
+    const inactive = {
+      ...row('I', `${currentYear - 1}-01-15`),
+      status: 'INACTIVE' as const,
+      filingYear: currentYear - 1,
+    }
+    const service = createService([inactive])
+
+    expect(service.getSummary().annual.inactive.pendingUpdate).toBe(0)
+  })
+
+  it('aísla los datos de Arriendos y Colocadores por fuente', () => {
+    const arriendos = [row('A', filingDateForDue(1))]
+    const colocadores = [row('C', filingDateForDue(2))]
+    const cache = {
+      getSnapshot: vi.fn((source = 'arriendos') => ({
+        rows: source === 'colocadores' ? colocadores : arriendos,
+      })),
+      getStatus: vi.fn(() => status),
+    }
+    const service = new ExternalDataService(
+      {} as ExternalDataConfigService,
+      cache as unknown as ExternalDataCacheService,
+      {} as ExternalWorkbookReaderService,
+      {} as ExternalAnnualMapperService,
+    )
+
+    expect(service.getSummary('arriendos').totals.total).toBe(1)
+    expect(service.getSummary('colocadores').totals.total).toBe(1)
+    expect(
+      service.findAll({ page: 1, pageSize: 10 }, 'colocadores').data[0]
+        .code,
+    ).toBe('C')
+    expect(cache.getSnapshot).toHaveBeenCalledWith('colocadores')
   })
 })

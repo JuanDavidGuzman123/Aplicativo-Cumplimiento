@@ -30,6 +30,14 @@ export class CreateCounterpartyDto {
   @MaxLength(200, { message: 'La razón social es demasiado larga' })
   businessName!: string
 
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsString({ message: 'La categoría no es válida' })
+  @MaxLength(64, { message: 'La categoría no es válida' })
+  categoryKey?: string
+
   @IsUUID('all', { message: 'El subproceso no es válido' })
   subprocessId!: string
 

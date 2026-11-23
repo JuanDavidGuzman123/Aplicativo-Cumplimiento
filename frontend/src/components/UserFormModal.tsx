@@ -148,7 +148,7 @@ export function UserFormModal({
             type="email"
             autoComplete="email"
             readOnly={mode === 'edit'}
-            className={`${inputClass} ${mode === 'edit' ? 'bg-slate-100 text-slate-500' : ''}`}
+            className={`${inputClass} ${mode === 'edit' ? 'bg-slate-50 text-slate-700' : ''}`}
             {...register('email')}
           />
           {errors.email && (
@@ -177,7 +177,7 @@ export function UserFormModal({
               <button
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
-                className="absolute inset-y-0 right-0 mt-1 flex items-center px-3 text-slate-500"
+                className="absolute inset-y-0 right-0 mt-1 flex items-center px-3 text-slate-400"
                 aria-label={
                   showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
                 }

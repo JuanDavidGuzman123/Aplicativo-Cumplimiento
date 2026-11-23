@@ -7,6 +7,7 @@ import type { ExternalUpdateDueRow } from './types.js'
 const row: ExternalUpdateDueRow = {
   id: 'external-37',
   code: '37',
+  nit: '9001234567',
   businessName: 'Pdv La Iglesia',
   status: 'ACTIVE',
   requiresSemiannualFollowUp: null,

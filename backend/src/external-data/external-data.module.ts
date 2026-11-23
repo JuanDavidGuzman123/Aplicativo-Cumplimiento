@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ReplaySubject } from 'rxjs'
+import { ColocadoresWorkbookService } from './colocadores-workbook.service.js'
+import { ColocadoresWorkbookWriterService } from './colocadores-workbook.writer.service.js'
 import { DelegatedTokenStore } from './delegated-token.store.js'
 import { ExternalAnnualMapperService } from './external-annual-mapper.service.js'
 import { ExternalChangeDetectionService } from './external-change-detection.service.js'
@@ -17,13 +19,18 @@ import { MicrosoftGraphService } from './microsoft-graph.service.js'
 import type { ExternalStreamEvent } from './types.js'
 
 @Module({
-  controllers: [ExternalDataController, ExternalWebhookController],
+  controllers: [
+    ExternalDataController,
+    ExternalWebhookController,
+  ],
   providers: [
     {
       provide: EXTERNAL_EVENTS_SUBJECT,
       useFactory: () => new ReplaySubject<ExternalStreamEvent>(1),
     },
     ExternalDataConfigService,
+    ColocadoresWorkbookWriterService,
+    ColocadoresWorkbookService,
     ExternalDataCacheService,
     DelegatedTokenStore,
     MicrosoftGraphService,
@@ -35,6 +42,6 @@ import type { ExternalStreamEvent } from './types.js'
     ExternalSubscriptionService,
     ExternalChangeDetectionService,
   ],
-  exports: [ExternalDataService],
+  exports: [ExternalDataService, ColocadoresWorkbookService],
 })
 export class ExternalDataModule {}

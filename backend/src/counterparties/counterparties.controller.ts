@@ -6,7 +6,6 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
   Query,
 } from '@nestjs/common'
@@ -14,69 +13,83 @@ import { UserRole } from '@prisma/client'
 import { CurrentUser } from '../common/decorators/current-user.decorator.js'
 import { Roles } from '../common/decorators/roles.decorator.js'
 import type { AuthenticatedUser } from '../common/types/authenticated-user.js'
-import { CounterpartiesService } from './counterparties.service.js'
 import {
-  CounterpartyActionDto,
-  ReactivateCounterpartyDto,
-} from './dto/counterparty-action.dto.js'
-import { CreateCounterpartyDto } from './dto/create-counterparty.dto.js'
+  COLOCADORES_CATEGORY_KEY,
+  ColocadoresWorkbookService,
+} from '../external-data/colocadores-workbook.service.js'
+import { CounterpartySyncService } from './counterparty-sync.service.js'
+import { CounterpartiesService } from './counterparties.service.js'
+import { ReactivateCounterpartyDto } from './dto/counterparty-action.dto.js'
 import { ListCounterpartiesQueryDto } from './dto/list-counterparties-query.dto.js'
-import { UpdateCounterpartyDto } from './dto/update-counterparty.dto.js'
+import { EvaluateRiskDto } from './dto/risk-evaluation.dto.js'
 
 @Controller('counterparties')
 export class CounterpartiesController {
   constructor(
     private readonly counterpartiesService: CounterpartiesService,
+    private readonly syncService: CounterpartySyncService,
+    private readonly colocadores: ColocadoresWorkbookService,
   ) {}
 
   @Get()
   findAll(@Query() query: ListCounterpartiesQueryDto) {
+    if (query.category === COLOCADORES_CATEGORY_KEY) {
+      return this.colocadores.list(query)
+    }
+
     return this.counterpartiesService.findAll(query)
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    if (await this.colocadores.has(id)) {
+      return this.colocadores.findOne(id)
+    }
+
     return this.counterpartiesService.findOne(id)
   }
 
-  @Post()
-  @Roles(UserRole.ADMIN)
-  create(
-    @Body() dto: CreateCounterpartyDto,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
-    return this.counterpartiesService.create(dto, actor.id)
-  }
-
-  @Patch(':id')
-  @Roles(UserRole.ADMIN)
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCounterpartyDto,
-    @CurrentUser() actor: AuthenticatedUser,
-  ) {
-    return this.counterpartiesService.update(id, dto, actor.id)
-  }
-
-  @Post(':id/archive')
-  @Roles(UserRole.ADMIN)
+  @Post('sync-arriendos')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @HttpCode(HttpStatus.OK)
-  archive(
+  syncArriendos(@CurrentUser() actor: AuthenticatedUser) {
+    return this.syncService.syncArriendos(actor.id)
+  }
+
+  @Post('sync-colocadores')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.OK)
+  syncColocadores(@CurrentUser() _actor: AuthenticatedUser) {
+    return this.colocadores.prepareWorkbook()
+  }
+
+  @Post(':id/risk-evaluation')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.OK)
+  async evaluateRisk(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: CounterpartyActionDto,
+    @Body() dto: EvaluateRiskDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.counterpartiesService.archive(id, dto, actor.id)
+    if (await this.colocadores.has(id)) {
+      return this.colocadores.evaluateRisk(id, dto, actor.id)
+    }
+
+    return this.counterpartiesService.evaluateRisk(id, dto, actor.id)
   }
 
   @Post(':id/reactivate')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @HttpCode(HttpStatus.OK)
-  reactivate(
+  async reactivate(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReactivateCounterpartyDto,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
+    if (await this.colocadores.has(id)) {
+      return this.colocadores.reactivate(id, dto, actor.id)
+    }
+
     return this.counterpartiesService.reactivate(id, dto, actor.id)
   }
 }

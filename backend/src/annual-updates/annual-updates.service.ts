@@ -433,7 +433,7 @@ export class AnnualUpdatesService {
         inactive: {
           total: inactiveRows,
           updatedThisYear: inactiveUpdated,
-          pendingUpdate: inactiveRows - inactiveUpdated,
+          pendingUpdate: 0,
           withoutDate: inactiveWithoutDate,
         },
       },

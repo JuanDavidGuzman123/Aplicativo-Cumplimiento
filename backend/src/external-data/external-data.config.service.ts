@@ -59,6 +59,26 @@ export class ExternalDataConfigService {
     )
   }
 
+  get colocadoresWorkbookPath(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_COLOCADORES_WORKBOOK_PATH')
+        ?.trim() ?? ''
+    )
+  }
+
+  get colocadoresWorksheetName(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_COLOCADORES_WORKSHEET_NAME')
+        ?.trim() || 'FR-SG-81'
+    )
+  }
+
+  get colocadoresReadConfigured(): boolean {
+    return this.enabled && Boolean(this.colocadoresWorkbookPath)
+  }
+
   get rawColumnMap(): string {
     return (
       this.config.get<string>('EXTERNAL_DATA_COLUMN_MAP')?.trim() ?? ''

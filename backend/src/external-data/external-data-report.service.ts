@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common'
 import ExcelJS from 'exceljs'
 import { ExternalDataService } from './external-data.service.js'
-import type { ExternalReportMetric } from './types.js'
+import type {
+  ExternalReportMetric,
+  ExternalSource,
+} from './types.js'
 import type { ExternalUpdateDueRow } from './types.js'
 
 const statusLabels: Record<ExternalUpdateDueRow['status'], string> = {
@@ -78,12 +81,17 @@ function formatDays(days: number | null): string {
 export class ExternalDataReportService {
   constructor(private readonly dataService: ExternalDataService) {}
 
-  async generatePendingActive(): Promise<Buffer> {
-    return this.generate('pending-active')
+  async generatePendingActive(
+    source: ExternalSource = 'arriendos',
+  ): Promise<Buffer> {
+    return this.generate('pending-active', source)
   }
 
-  async generate(metric: ExternalReportMetric): Promise<Buffer> {
-    const report = this.dataService.getReport(metric)
+  async generate(
+    metric: ExternalReportMetric,
+    source: ExternalSource = 'arriendos',
+  ): Promise<Buffer> {
+    const report = this.dataService.getReport(metric, source)
     const workbook = new ExcelJS.Workbook()
 
     workbook.creator = 'Seguimiento de Contrapartes'

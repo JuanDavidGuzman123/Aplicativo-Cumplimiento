@@ -11,6 +11,7 @@ import {
   Prisma,
 } from '@prisma/client'
 import { AuditService } from '../audit/audit.service.js'
+import { DEFAULT_CATEGORY_KEY } from '../categories/category.constants.js'
 import {
   addMonths,
   getBusinessToday,
@@ -92,6 +93,7 @@ type StoredValidation = {
   options: {
     createMissingSubprocesses: boolean
     authorizeDateChanges: boolean
+    categoryKey: string
   }
   rows: ImportRowValidation[]
   summary: ImportSummary
@@ -474,6 +476,8 @@ export class ImportsService {
         createMissingSubprocesses:
           dto.createMissingSubprocesses ?? false,
         authorizeDateChanges: dto.authorizeDateChanges ?? false,
+        categoryKey:
+          dto.categoryKey?.trim() || DEFAULT_CATEGORY_KEY,
       },
     )
 
@@ -517,6 +521,8 @@ export class ImportsService {
       createMissingSubprocesses:
         dto.createMissingSubprocesses ?? false,
       authorizeDateChanges: dto.authorizeDateChanges ?? false,
+      categoryKey:
+        dto.categoryKey?.trim() || DEFAULT_CATEGORY_KEY,
     }
     const validation = await this.validateRows(
       data.files,
@@ -541,6 +547,16 @@ export class ImportsService {
             subprocess.id,
           ]),
         )
+        const category = await tx.category.findUnique({
+          where: { key: options.categoryKey },
+          select: { id: true, active: true },
+        })
+
+        if (!category || !category.active) {
+          throw new BadRequestException(
+            'La categoría seleccionada no existe o está inactiva',
+          )
+        }
 
         const nitValues = validation.rows
           .filter(
@@ -663,6 +679,7 @@ export class ImportsService {
               nitNormalized: row.nitNormalized,
               businessName: row.values.businessName ?? '',
               observations: row.values.observations,
+              categoryId: category.id,
               subprocessId,
               registrationDate,
               lastFollowUpDate,
@@ -830,6 +847,7 @@ export class ImportsService {
     options: {
       createMissingSubprocesses: boolean
       authorizeDateChanges: boolean
+      categoryKey: string
     },
   ): Promise<StoredValidation> {
     const flatRows = flattenRows(files)

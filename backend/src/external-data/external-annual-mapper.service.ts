@@ -15,6 +15,7 @@ import type { ParsedRow } from '../imports/excel-parser.js'
 import type {
   ExternalAnnualMapping,
   ExternalAnnualRow,
+  ExternalImportHeader,
   ExternalSyncStats,
   ExternalWorkbookData,
 } from './types.js'
@@ -26,6 +27,8 @@ type MappedWorkbook = {
   mappingErrors: string[]
 }
 
+const EXTERNAL_EXTRA_FIELDS = ['nit'] as const
+
 @Injectable()
 export class ExternalAnnualMapperService {
   resolveMapping(
@@ -34,7 +37,10 @@ export class ExternalAnnualMapperService {
   ): { mapping: ExternalAnnualMapping; errors: string[] } {
     if (!rawColumnMap) {
       return {
-        mapping: { ...suggestAnnualMapping(workbook.headers) },
+        mapping: {
+          ...suggestAnnualMapping(workbook.headers),
+          nit: this.findNitHeader(workbook.headers),
+        },
         errors: [],
       }
     }
@@ -61,7 +67,10 @@ export class ExternalAnnualMapperService {
     const mapping: ExternalAnnualMapping = {}
     const errors: string[] = []
 
-    for (const field of ANNUAL_IMPORT_FIELDS) {
+    for (const field of [
+      ...ANNUAL_IMPORT_FIELDS,
+      ...EXTERNAL_EXTRA_FIELDS,
+    ]) {
       const rawValue = source[field]
 
       if (rawValue === undefined || rawValue === null || rawValue === '') {
@@ -97,11 +106,18 @@ export class ExternalAnnualMapperService {
       mapping[field] = header.value
     }
 
+    const allowedFields: string[] = [
+      ...ANNUAL_IMPORT_FIELDS,
+      ...EXTERNAL_EXTRA_FIELDS,
+    ]
+
     for (const key of Object.keys(source)) {
-      if (!ANNUAL_IMPORT_FIELDS.includes(key as AnnualImportField)) {
+      if (!allowedFields.includes(key)) {
         errors.push(`El campo "${key}" no es reconocido`)
       }
     }
+
+    mapping.nit = mapping.nit || this.findNitHeader(workbook.headers)
 
     return { mapping, errors }
   }
@@ -124,6 +140,13 @@ export class ExternalAnnualMapperService {
       const parsedRow = row as ParsedRow
       const code = getAnnualFieldValue(sheet, parsedRow, mapping, 'code')
       const codeNormalized = code ? normalizeAnnualCode(code) : ''
+      const nitIndex = sheet.headers.findIndex(
+        (header) => header.value === mapping.nit,
+      )
+      const nit =
+        nitIndex >= 0
+          ? parsedRow.values[nitIndex]?.trim() || null
+          : null
       const businessName =
         getAnnualFieldValue(sheet, parsedRow, mapping, 'businessName') ?? ''
       const statusRaw = getAnnualFieldValue(
@@ -188,6 +211,7 @@ export class ExternalAnnualMapperService {
       const candidate: ExternalAnnualRow = {
         id: `external-${codeNormalized}`,
         code: codeNormalized,
+        nit,
         businessName: businessName.trim(),
         status,
         requiresSemiannualFollowUp: followUp,
@@ -233,6 +257,29 @@ export class ExternalAnnualMapperService {
       mapping,
       mappingErrors: this.missingRequiredFields(mapping),
     }
+  }
+
+  private findNitHeader(
+    headers: ExternalImportHeader[],
+  ): string | null {
+    const normalize = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+
+    const header = headers.find((item) => {
+      const value = normalize(item.label || item.value)
+      return (
+        value.includes('numero de documento') ||
+        value === 'nit' ||
+        value === 'documento'
+      )
+    })
+
+    return header?.value ?? null
   }
 
   private missingRequiredFields(

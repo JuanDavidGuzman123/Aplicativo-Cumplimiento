@@ -80,13 +80,13 @@ describe('API (e2e)', () => {
 
   it('normaliza errores de autenticación', async () => {
     const response = await request(app.getHttpServer())
-      .get('/api/dashboard/summary')
+      .get('/api/users')
       .expect(401)
 
     expect(response.body).toMatchObject({
       statusCode: 401,
       message: 'Token no proporcionado',
-      path: '/api/dashboard/summary',
+      path: '/api/users',
     })
     expect(
       Number.isNaN(Date.parse(response.body.timestamp)),
@@ -103,69 +103,6 @@ describe('API (e2e)', () => {
       .expect(401)
 
     expect(response.body.message).toBe('Credenciales inválidas')
-  })
-
-  it('permite consultar el dashboard con JWT', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/api/dashboard/summary')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200)
-
-    expect(response.body.businessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(response.body.calendar).toEqual(
-      expect.objectContaining({
-        overdue: expect.any(Number),
-        pending: expect.any(Number),
-        upcoming: expect.any(Number),
-        onTime: expect.any(Number),
-        unscheduled: expect.any(Number),
-      }),
-    )
-  })
-
-  it('valida los parámetros del dashboard', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/api/dashboard/attention?page=0')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(400)
-
-    expect(response.body.message).toEqual(
-      expect.arrayContaining([
-        'La página debe ser mayor o igual a 1',
-      ]),
-    )
-  })
-
-  it('protege y pagina la auditoría para ADMIN', async () => {
-    await request(app.getHttpServer())
-      .get('/api/audit')
-      .expect(401)
-
-    const response = await request(app.getHttpServer())
-      .get('/api/audit')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(200)
-
-    expect(response.body.meta).toEqual(
-      expect.objectContaining({
-        page: 1,
-        pageSize: 20,
-        total: expect.any(Number),
-        totalPages: expect.any(Number),
-      }),
-    )
-    expect(Array.isArray(response.body.data)).toBe(true)
-  })
-
-  it('valida el tamaño de página de auditoría', async () => {
-    const response = await request(app.getHttpServer())
-      .get('/api/audit?pageSize=101')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(400)
-
-    expect(response.body.message).toContain(
-      'El tamaño de página no puede superar 100',
-    )
   })
 
   it('protege y consulta el resumen anual', async () => {

@@ -22,6 +22,12 @@ enum FollowUpStatus {
   FINALIZED
 }
 
+enum RiskDecision {
+  CONTINUE
+  ARCHIVE
+  REACTIVATE
+}
+
 enum NotificationType {
   D30
   D15
@@ -66,6 +72,17 @@ model User {
   annualNotificationReads   AnnualNotificationRead[]
   importBatches             ImportBatch[]            @relation("ImportUploadedBy")
   auditLogs                 AuditLog[]
+  riskEvaluations           RiskEvaluation[]         @relation("RiskEvaluationCreatedBy")
+}
+
+model Category {
+  id             String         @id @default(uuid())
+  key            String         @unique
+  name           String         @unique
+  active         Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  createdAt      DateTime       @default(now())
+  counterparties Counterparty[]
 }
 
 model Subprocess {
@@ -83,6 +100,8 @@ model Counterparty {
   nitNormalized      String             @unique
   businessName       String
   observations       String?            @db.Text
+  categoryId         String
+  category           Category           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   subprocessId       String
   subprocess         Subprocess         @relation(fields: [subprocessId], references: [id], onDelete: Restrict)
   status             CounterpartyStatus @default(ACTIVE)
@@ -100,10 +119,12 @@ model Counterparty {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  followUps     FollowUp[]
-  notifications Notification[]
+  followUps       FollowUp[]
+  notifications   Notification[]
+  riskEvaluations RiskEvaluation[]
 
   @@index([status])
+  @@index([categoryId])
   @@index([subprocessId])
   @@index([nextFollowUpDate])
   @@index([businessName])
@@ -152,6 +173,21 @@ model FollowUp {
   @@index([counterpartyId, performedAt])
   @@index([status])
   @@index([responsibleUserId])
+}
+
+model RiskEvaluation {
+  id               String       @id @default(uuid())
+  counterpartyId   String
+  counterparty     Counterparty @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  decision         RiskDecision
+  evaluatedAt      DateTime     @db.Date
+  nextFollowUpDate DateTime?    @db.Date
+  notes            String?      @db.Text
+  createdById      String
+  createdBy        User         @relation("RiskEvaluationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt        DateTime     @default(now())
+
+  @@index([counterpartyId, evaluatedAt])
 }
 
 model Document {

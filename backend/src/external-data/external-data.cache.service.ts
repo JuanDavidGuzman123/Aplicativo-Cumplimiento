@@ -6,6 +6,7 @@ import type {
   ExternalAnnualRow,
   ExternalDataStatus,
   ExternalImportHeader,
+  ExternalSource,
   ExternalStreamEvent,
   ExternalSubscriptionStatus,
   ExternalSyncStats,
@@ -24,11 +25,9 @@ type Snapshot = {
   stats: ExternalSyncStats
 }
 
-@Injectable()
-export class ExternalDataCacheService {
-  private readonly eventsSubject: ReplaySubject<ExternalStreamEvent>
-  private snapshot: Snapshot | null = null
-  private status: ExternalDataStatus = {
+function createStatus(source: ExternalSource): ExternalDataStatus {
+  return {
+    source,
     enabled: false,
     configured: false,
     connection: 'disabled',
@@ -52,6 +51,13 @@ export class ExternalDataCacheService {
     pollMs: 900000,
     serverNow: new Date().toISOString(),
   }
+}
+
+@Injectable()
+export class ExternalDataCacheService {
+  private readonly eventsSubject: ReplaySubject<ExternalStreamEvent>
+  private readonly snapshots = new Map<ExternalSource, Snapshot>()
+  private readonly statuses = new Map<ExternalSource, ExternalDataStatus>()
 
   constructor(
     @Inject(EXTERNAL_EVENTS_SUBJECT)
@@ -64,27 +70,35 @@ export class ExternalDataCacheService {
     return this.eventsSubject.asObservable()
   }
 
-  getStatus(): ExternalDataStatus {
+  getStatus(source: ExternalSource = 'arriendos'): ExternalDataStatus {
+    const status = this.statuses.get(source) ?? createStatus(source)
+
     return {
-      ...this.status,
-      subscription: { ...this.status.subscription },
-      mappingErrors: [...this.status.mappingErrors],
+      ...status,
+      subscription: { ...status.subscription },
+      mappingErrors: [...status.mappingErrors],
       serverNow: new Date().toISOString(),
     }
   }
 
-  getSnapshot(): Snapshot | null {
-    return this.snapshot
+  getSnapshot(source: ExternalSource = 'arriendos'): Snapshot | null {
+    return this.snapshots.get(source) ?? null
   }
 
-  initialize(options: {
-    enabled: boolean
-    configured: boolean
-    webhookConfigured: boolean
-    pollMs: number
-  }): void {
-    this.status = {
-      ...this.status,
+  initialize(
+    options: {
+      enabled: boolean
+      configured: boolean
+      webhookConfigured: boolean
+      pollMs: number
+    },
+    source: ExternalSource = 'arriendos',
+  ): void {
+    const current = this.statuses.get(source) ?? createStatus(source)
+    const snapshot = this.snapshots.get(source)
+
+    this.statuses.set(source, {
+      ...current,
       enabled: options.enabled,
       configured: options.configured,
       webhookConfigured: options.webhookConfigured,
@@ -94,21 +108,23 @@ export class ExternalDataCacheService {
         : options.configured
           ? 'connecting'
           : 'unconfigured',
-      freshness: this.snapshot ? this.status.freshness : 'never',
+      freshness: snapshot ? current.freshness : 'never',
       serverNow: new Date().toISOString(),
-    }
-    this.publish('status')
+    })
+    this.publish('status', undefined, source)
   }
 
-  setSyncing(): void {
-    this.status = {
-      ...this.status,
-      connection: this.snapshot ? 'connected' : 'connecting',
+  setSyncing(source: ExternalSource = 'arriendos'): void {
+    const current = this.statuses.get(source) ?? createStatus(source)
+
+    this.statuses.set(source, {
+      ...current,
+      connection: this.snapshots.has(source) ? 'connected' : 'connecting',
       lastAttemptAt: new Date().toISOString(),
       lastError: null,
       serverNow: new Date().toISOString(),
-    }
-    this.publish('status')
+    })
+    this.publish('status', undefined, source)
   }
 
   setSuccess(input: {
@@ -122,8 +138,10 @@ export class ExternalDataCacheService {
     sourceUrl: string | null
     lastModifiedDateTime: string | null
     stats: ExternalSyncStats
+    source?: ExternalSource
   }): ExternalSyncStats {
-    const previous = this.snapshot?.rows ?? []
+    const source = input.source ?? 'arriendos'
+    const previous = this.snapshots.get(source)?.rows ?? []
     const currentById = new Map(
       input.rows.map((row) => [row.id, row]),
     )
@@ -158,10 +176,12 @@ export class ExternalDataCacheService {
       removed,
     }
     const versionChanged =
-      this.snapshot?.version !== input.version || previous.length === 0
+      this.snapshots.get(source)?.version !== input.version ||
+      previous.length === 0
     const now = new Date().toISOString()
+    const current = this.statuses.get(source) ?? createStatus(source)
 
-    this.snapshot = {
+    this.snapshots.set(source, {
       rows: input.rows,
       mapping: input.mapping,
       mappingErrors: input.mappingErrors,
@@ -172,10 +192,11 @@ export class ExternalDataCacheService {
       sourceUrl: input.sourceUrl,
       lastModifiedDateTime: input.lastModifiedDateTime,
       stats,
-    }
+    })
 
-    this.status = {
-      ...this.status,
+    this.statuses.set(source, {
+      ...current,
+      source,
       connection: 'connected',
       freshness: 'fresh',
       sourceName: input.sourceName,
@@ -183,61 +204,77 @@ export class ExternalDataCacheService {
       version: input.version,
       lastAttemptAt: now,
       lastSuccessAt: now,
-      lastChangeAt: versionChanged
-        ? now
-        : this.status.lastChangeAt,
+      lastChangeAt: versionChanged ? now : current.lastChangeAt,
       lastError: null,
       rowCount: input.rows.length,
       mappingErrors: input.mappingErrors,
       serverNow: now,
-    }
+    })
 
-    this.publish(versionChanged ? 'updated' : 'status', stats)
+    this.publish(versionChanged ? 'updated' : 'status', stats, source)
     return stats
   }
 
-  setError(message: string): void {
+  setError(message: string, source: ExternalSource = 'arriendos'): void {
     const now = new Date().toISOString()
-    this.status = {
-      ...this.status,
-      connection: this.snapshot ? 'degraded' : 'error',
-      freshness: this.snapshot ? 'stale' : 'error',
+    const current = this.statuses.get(source) ?? createStatus(source)
+
+    this.statuses.set(source, {
+      ...current,
+      source,
+      connection: this.snapshots.has(source) ? 'degraded' : 'error',
+      freshness: this.snapshots.has(source) ? 'stale' : 'error',
       lastAttemptAt: now,
       lastError: message,
       serverNow: now,
-    }
-    this.publish('error')
+    })
+    this.publish('error', undefined, source)
   }
 
-  setUnconfigured(message: string): void {
-    this.status = {
-      ...this.status,
+  setUnconfigured(
+    message: string,
+    source: ExternalSource = 'arriendos',
+  ): void {
+    const now = new Date().toISOString()
+    const current = this.statuses.get(source) ?? createStatus(source)
+
+    this.statuses.set(source, {
+      ...current,
+      source,
       connection: 'unconfigured',
-      freshness: this.snapshot ? 'stale' : 'never',
-      lastAttemptAt: new Date().toISOString(),
+      freshness: this.snapshots.has(source) ? 'stale' : 'never',
+      lastAttemptAt: now,
       lastError: message,
-      serverNow: new Date().toISOString(),
-    }
-    this.publish('status')
+      serverNow: now,
+    })
+    this.publish('status', undefined, source)
   }
 
-  setSubscriptionStatus(status: ExternalSubscriptionStatus): void {
-    this.status = {
-      ...this.status,
+  setSubscriptionStatus(
+    status: ExternalSubscriptionStatus,
+    source: ExternalSource = 'arriendos',
+  ): void {
+    const current = this.statuses.get(source) ?? createStatus(source)
+
+    this.statuses.set(source, {
+      ...current,
+      source,
       subscription: { ...status },
       serverNow: new Date().toISOString(),
-    }
-    this.publish('status')
+    })
+    this.publish('status', undefined, source)
   }
 
   private publish(
     type: ExternalStreamEvent['type'],
-    changes?: ExternalSyncStats,
+    changes: ExternalSyncStats | undefined,
+    source: ExternalSource,
   ): void {
     this.eventsSubject.next({
       type,
+      source,
       at: new Date().toISOString(),
-      status: this.getStatus(),
+      status: this.getStatus(source),
       ...(changes ? { changes } : {}),
     })
   }

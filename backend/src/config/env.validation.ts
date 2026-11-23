@@ -146,6 +146,14 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  EXTERNAL_COLOCADORES_WORKBOOK_PATH = '';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_COLOCADORES_WORKSHEET_NAME = 'FR-SG-81';
+
+  @IsString()
+  @IsOptional()
   EXTERNAL_DATA_COLUMN_MAP = '';
 
   @IsString()

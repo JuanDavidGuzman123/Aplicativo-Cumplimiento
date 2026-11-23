@@ -6,19 +6,31 @@ import type {
   ExternalDueListResponse,
   ExternalListParams,
   ExternalReportMetric,
+  ExternalSource,
   ExternalStreamEvent,
   ExternalSummary,
 } from '../types/external-data'
 
-export async function getExternalSummary(): Promise<ExternalSummary> {
+const basePaths: Record<ExternalSource, string> = {
+  arriendos: '/external-data',
+}
+
+function basePath(source: ExternalSource): string {
+  return basePaths[source]
+}
+
+export async function getExternalSummary(
+  source: ExternalSource = 'arriendos',
+): Promise<ExternalSummary> {
   const { data } = await api.get<ExternalSummary>(
-    '/external-data/summary',
+    `${basePath(source)}/summary`,
   )
   return data
 }
 
 export async function getExternalUpdates(
   params: ExternalListParams,
+  source: ExternalSource = 'arriendos',
 ): Promise<ExternalAnnualListResponse> {
   const query = Object.fromEntries(
     Object.entries(params).filter(
@@ -27,7 +39,7 @@ export async function getExternalUpdates(
   )
 
   const { data } = await api.get<ExternalAnnualListResponse>(
-    '/external-data',
+    basePath(source),
     { params: query },
   )
   return data
@@ -35,33 +47,40 @@ export async function getExternalUpdates(
 
 export async function getExternalUpdatesDue(
   params: { page?: number; pageSize?: number } = {},
+  source: ExternalSource = 'arriendos',
 ): Promise<ExternalDueListResponse> {
   const { data } = await api.get<ExternalDueListResponse>(
-    '/external-data/updates-due',
+    `${basePath(source)}/updates-due`,
     { params },
   )
   return data
 }
 
-export async function getExternalStatus(): Promise<ExternalDataStatus> {
+export async function getExternalStatus(
+  source: ExternalSource = 'arriendos',
+): Promise<ExternalDataStatus> {
   const { data } = await api.get<ExternalDataStatus>(
-    '/external-data/status',
+    `${basePath(source)}/status`,
   )
   return data
 }
 
-export async function syncExternalData(): Promise<ExternalDataStatus> {
+export async function syncExternalData(
+  source: ExternalSource = 'arriendos',
+): Promise<ExternalDataStatus> {
   const { data } = await api.post<ExternalDataStatus>(
-    '/external-data/refresh',
+    `${basePath(source)}/refresh`,
   )
   return data
 }
 
 export async function downloadExternalReport(
   metric: ExternalReportMetric,
+  source: ExternalSource = 'arriendos',
 ): Promise<void> {
+  const prefix = 'reporte'
   const response = await api.get<Blob>(
-    `/external-data/reports/${metric}`,
+    `${basePath(source)}/reports/${metric}`,
     { responseType: 'blob' },
   )
   const disposition = String(
@@ -69,7 +88,7 @@ export async function downloadExternalReport(
   )
   const fileName =
     disposition.match(/filename="?([^";]+)"?/)?.[1] ??
-    `reporte-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    `${prefix}-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
   const url = URL.createObjectURL(response.data)
   const anchor = document.createElement('a')
 
@@ -81,17 +100,21 @@ export async function downloadExternalReport(
   URL.revokeObjectURL(url)
 }
 
-export async function downloadPendingActiveReport(): Promise<void> {
-  await downloadExternalReport('pending-active')
+export async function downloadPendingActiveReport(
+  source: ExternalSource = 'arriendos',
+): Promise<void> {
+  await downloadExternalReport('pending-active', source)
 }
 
 export function subscribeExternalEvents(options: {
+  source?: ExternalSource
   onEvent: (event: ExternalStreamEvent) => void
   onConnected?: () => void
   onDisconnected?: (error?: unknown) => void
 }): () => void {
   const controller = new AbortController()
-  const baseUrl = import.meta.env.VITE_API_URL ?? '/api'
+  const apiUrl = import.meta.env.VITE_API_URL ?? '/api'
+  const baseUrl = `${apiUrl.replace(/\/$/, '')}${basePath(options.source ?? 'arriendos')}`
   const token = getToken()
   const headers: Record<string, string> = {
     Accept: 'text/event-stream',
@@ -104,14 +127,11 @@ export function subscribeExternalEvents(options: {
 
   void (async () => {
     try {
-      const response = await fetch(
-        `${baseUrl}/external-data/events`,
-        {
-          headers,
-          signal: controller.signal,
-          cache: 'no-store',
-        },
-      )
+      const response = await fetch(`${baseUrl}/events`, {
+        headers,
+        signal: controller.signal,
+        cache: 'no-store',
+      })
 
       if (!response.ok) {
         throw new Error(

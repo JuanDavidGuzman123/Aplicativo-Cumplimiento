@@ -65,11 +65,18 @@ export class MicrosoftGraphService {
   ) {}
 
   get driveItemsPath(): string {
-    return `/drives/${encodeURIComponent(this.config.driveId)}/items/${encodeURIComponent(this.config.itemId)}`
+    return this.workbookPath()
   }
 
   get resource(): string {
     return `/drives/${this.config.driveId}/items/${this.config.itemId}`
+  }
+
+  private workbookPath(
+    driveId = this.config.driveId,
+    itemId = this.config.itemId,
+  ): string {
+    return `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}`
   }
 
   async getAccessToken(): Promise<string> {
@@ -104,10 +111,13 @@ export class MicrosoftGraphService {
     return result.value ?? []
   }
 
-  async listWorksheets(): Promise<GraphWorksheet[]> {
+  async listWorksheets(
+    driveId?: string,
+    itemId?: string,
+  ): Promise<GraphWorksheet[]> {
     const result = await this.request<
       GraphValueResponse<GraphWorksheet>
-    >(`${this.driveItemsPath}/workbook/worksheets`)
+    >(`${this.workbookPath(driveId, itemId)}/workbook/worksheets`)
     return result.value ?? []
   }
 
@@ -136,9 +146,13 @@ export class MicrosoftGraphService {
     return values
   }
 
-  async getWorksheetValues(worksheetId: string): Promise<unknown[][]> {
+  async getWorksheetValues(
+    worksheetId: string,
+    driveId?: string,
+    itemId?: string,
+  ): Promise<unknown[][]> {
     const result = await this.request<GraphRangeResponse>(
-      `${this.driveItemsPath}/workbook/worksheets/${encodeURIComponent(worksheetId)}/usedRange`,
+      `${this.workbookPath(driveId, itemId)}/workbook/worksheets/${encodeURIComponent(worksheetId)}/usedRange`,
     )
     return result.values ?? []
   }

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common'
 import type { MessageEvent } from '@nestjs/common'
 import type { Response } from 'express'
-import { map, type Observable } from 'rxjs'
+import { filter, map, type Observable } from 'rxjs'
 import { ExternalDataCacheService } from './external-data.cache.service.js'
 import { ExternalDataReportService } from './external-data-report.service.js'
 import { ExternalDataService } from './external-data.service.js'
@@ -76,6 +76,7 @@ export class ExternalDataController {
   @Sse('events')
   events(): Observable<MessageEvent> {
     return this.cache.events.pipe(
+      filter((event) => event.source === 'arriendos'),
       map((event) => ({
         type: event.type,
         id: event.at,

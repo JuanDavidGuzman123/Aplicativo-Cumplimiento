@@ -1,172 +1,240 @@
 import {
   Archive,
-  Eye,
+  ArrowLeft,
+  ClipboardCheck,
+  LayoutGrid,
+  History,
   Loader2,
-  Pencil,
-  Plus,
+  RefreshCw,
   RotateCcw,
+  Search,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Badge } from '../components/Badge'
-import { CounterpartyFormModal } from '../components/CounterpartyFormModal'
-import { CounterpartyStatusModal } from '../components/CounterpartyStatusModal'
-import { Pagination } from '../components/Pagination'
-import { useAuth } from '../hooks/useAuth'
-import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react'
+import {
+  useNavigate,
+  useParams,
+} from 'react-router-dom'
+import {
+  Badge,
+  type BadgeTone,
+} from '../components/Badge'
+import { Modal } from '../components/Modal'
+import { Pagination } from '../components/Pagination'
+import {
+  evaluateRisk,
+  getCategories,
   getCounterparties,
+  syncArriendosFromExternal,
+  syncColocadoresFromExternal,
   getCounterparty,
+  reactivateCounterparty,
 } from '../services/counterparties'
-import { getSubprocesses } from '../services/subprocesses'
 import type {
   CalendarStatus,
+  CategorySummary,
   CounterpartyDetail,
   CounterpartyListItem,
   CounterpartyListResponse,
   CounterpartyStatus,
 } from '../types/counterparty'
-import type { Subprocess } from '../types/subprocess'
 import { getApiErrorMessage } from '../utils/api-error'
 import {
-  calendarStatusLabels,
-  calendarStatusTones,
-  counterpartyStatusLabels,
-} from '../utils/counterparty'
-import { formatDate } from '../utils/labels'
+  formatDate,
+  formatDateTime,
+  todayDateInput,
+} from '../utils/labels'
 import {
+  dangerButtonClass,
   inputClass,
   labelClass,
   primaryButtonClass,
   secondaryButtonClass,
+  successButtonClass,
 } from '../utils/styles'
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = 15
 
-function isCalendarStatus(value: string | null): value is CalendarStatus {
-  return (
-    value === 'OVERDUE' ||
-    value === 'PENDING' ||
-    value === 'UPCOMING' ||
-    value === 'ON_TIME' ||
-    value === 'UNSCHEDULED'
+const statusLabels: Record<CounterpartyStatus, string> = {
+  ACTIVE: 'En seguimiento',
+  ARCHIVED: 'Archivada',
+}
+
+const statusTones: Record<CounterpartyStatus, BadgeTone> = {
+  ACTIVE: 'green',
+  ARCHIVED: 'slate',
+}
+
+const calendarLabels: Record<CalendarStatus, string> = {
+  OVERDUE: 'Vencido',
+  PENDING: 'Por vencer',
+  UPCOMING: 'Próximo',
+  ON_TIME: 'Al día',
+  UNSCHEDULED: 'Sin fecha',
+}
+
+const calendarTones: Record<CalendarStatus, BadgeTone> = {
+  OVERDUE: 'red',
+  PENDING: 'amber',
+  UPCOMING: 'blue',
+  ON_TIME: 'green',
+  UNSCHEDULED: 'slate',
+}
+
+const decisionLabels = {
+  CONTINUE: 'Continúa con riesgo',
+  ARCHIVE: 'Archivada por no presentar riesgo',
+  REACTIVATE: 'Reactivada',
+} as const
+
+const decisionTones = {
+  CONTINUE: 'amber',
+  ARCHIVE: 'slate',
+  REACTIVATE: 'green',
+} as const
+
+function colocadoresBadge(item: CounterpartyListItem): {
+  label: string
+  tone: BadgeTone
+} {
+  if (item.status === 'ARCHIVED') {
+    return { label: 'Archivada', tone: 'slate' }
+  }
+
+  if (item.calendarStatus === 'OVERDUE') {
+    return { label: 'Vencida', tone: 'red' }
+  }
+
+  if (item.evaluated) {
+    return { label: 'Revisada', tone: 'green' }
+  }
+
+  return { label: 'Al día', tone: 'blue' }
+}
+
+type ModalMode = 'evaluate' | 'reactivate' | 'history'
+
+function addSixMonths(value: string): string {
+  const [year, month, day] = value.split('-').map(Number)
+  const targetMonth = month - 1 + 6
+  const lastDay = new Date(
+    Date.UTC(year, targetMonth + 1, 0),
+  ).getUTCDate()
+  const next = new Date(
+    Date.UTC(year, targetMonth, Math.min(day, lastDay)),
   )
-}
 
-function isCounterpartyStatus(
-  value: string | null,
-): value is CounterpartyStatus {
-  return value === 'ACTIVE' || value === 'ARCHIVED'
-}
-
-type StatusTarget = {
-  counterparty: CounterpartyListItem
-  mode: 'archive' | 'reactivate'
+  return next.toISOString().slice(0, 10)
 }
 
 export function CounterpartiesPage() {
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'ADMIN'
-  const [searchParams] = useSearchParams()
-  const calendarStatusFromUrl = searchParams.get('calendarStatus')
-  const counterpartyStatusFromUrl = searchParams.get('status')
+  const navigate = useNavigate()
+  const { id: notificationCounterpartyId } = useParams<{ id: string }>()
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const debouncedSearch = useDebouncedValue(searchTerm)
-  const [subprocessFilter, setSubprocessFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState<
-    CounterpartyStatus | ''
-  >(
-    isCounterpartyStatus(counterpartyStatusFromUrl)
-      ? counterpartyStatusFromUrl
-      : '',
+  const [categories, setCategories] = useState<CategorySummary[]>([])
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [categoriesError, setCategoriesError] = useState('')
+  const [syncingArriendos, setSyncingArriendos] = useState(false)
+  const [syncingColocadores, setSyncingColocadores] = useState(false)
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<
+    string | null
+  >(null)
+
+  const [searchDraft, setSearchDraft] = useState('')
+  const [query, setQuery] = useState<{
+    search: string
+    category: string
+    status: CounterpartyStatus
+    page: number
+  }>({
+    search: '',
+    category: '',
+    status: 'ACTIVE',
+    page: 1,
+  })
+  const [list, setList] = useState<CounterpartyListResponse | null>(
+    null,
   )
-  const [calendarFilter, setCalendarFilter] = useState<
-    CalendarStatus | ''
-  >(
-    isCalendarStatus(calendarStatusFromUrl)
-      ? calendarStatusFromUrl
-      : '',
-  )
-  const [page, setPage] = useState(1)
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const [result, setResult] =
-    useState<CounterpartyListResponse | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [modal, setModal] = useState<{
+    mode: ModalMode
+    item: CounterpartyListItem
+  } | null>(null)
+  const [detail, setDetail] = useState<CounterpartyDetail | null>(
+    null,
+  )
+  const [detailLoading, setDetailLoading] = useState(
+    Boolean(notificationCounterpartyId),
+  )
+  const [modalError, setModalError] = useState('')
   const [success, setSuccess] = useState('')
-
-  const [subprocesses, setSubprocesses] = useState<Subprocess[]>([])
-  const [subprocessesLoading, setSubprocessesLoading] = useState(true)
-  const [subprocessError, setSubprocessError] = useState('')
-
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editing, setEditing] = useState<CounterpartyDetail | null>(
-    null,
-  )
-  const [loadingEditId, setLoadingEditId] = useState<string | null>(
-    null,
-  )
-  const [statusTarget, setStatusTarget] = useState<StatusTarget | null>(
-    null,
+  const [submitting, setSubmitting] = useState(false)
+  const [decision, setDecision] = useState<
+    'CONTINUE' | 'ARCHIVE'
+  >('CONTINUE')
+  const [notes, setNotes] = useState('')
+  const [reactivateDate, setReactivateDate] = useState(
+    addSixMonths(todayDateInput()),
   )
 
-  const loadSubprocesses = useCallback(async () => {
-    try {
-      setSubprocesses(await getSubprocesses())
-      setSubprocessError('')
-    } catch (loadError) {
-      setSubprocessError(
-        getApiErrorMessage(
-          loadError,
-          'No fue posible cargar los subprocesos',
-        ),
-      )
-    } finally {
-      setSubprocessesLoading(false)
-    }
-  }, [])
+  const evaluationDate = useMemo(() => todayDateInput(), [])
+  const followUpPreview = useMemo(
+    () => addSixMonths(evaluationDate),
+    [evaluationDate],
+  )
 
   useEffect(() => {
     let active = true
 
-    getSubprocesses()
+    getCategories()
       .then((data) => {
-        if (active) {
-          setSubprocesses(data)
+        if (!active) {
+          return
         }
+
+        setCategories(data)
+        setCategoriesError('')
       })
       .catch((loadError) => {
         if (active) {
-          setSubprocessError(
+          setCategoriesError(
             getApiErrorMessage(
               loadError,
-              'No fue posible cargar los subprocesos',
+              'No fue posible cargar las categorías',
             ),
           )
         }
       })
       .finally(() => {
         if (active) {
-          setSubprocessesLoading(false)
+          setCategoriesLoading(false)
         }
       })
 
     return () => {
       active = false
     }
-  }, [])
+  }, [refreshKey])
 
   useEffect(() => {
+    if (!query.category) {
+      return
+    }
+
     let active = true
 
     getCounterparties({
-      search: debouncedSearch.trim() || undefined,
-      subprocessId: subprocessFilter || undefined,
-      status: statusFilter || undefined,
-      calendarStatus: calendarFilter || undefined,
-      page,
+      search: query.search || undefined,
+      category: query.category,
+      status: query.status,
+      page: query.page,
       pageSize: PAGE_SIZE,
     })
       .then((data) => {
@@ -174,19 +242,12 @@ export function CounterpartiesPage() {
           return
         }
 
-        setResult(data)
-        setError('')
-
-        if (
-          data.meta.totalPages > 0 &&
-          data.meta.page > data.meta.totalPages
-        ) {
-          setPage(data.meta.totalPages)
-        }
+        setList(data)
+        setListError('')
       })
       .catch((loadError) => {
         if (active) {
-          setError(
+          setListError(
             getApiErrorMessage(
               loadError,
               'No fue posible cargar las contrapartes',
@@ -196,7 +257,7 @@ export function CounterpartiesPage() {
       })
       .finally(() => {
         if (active) {
-          setIsLoading(false)
+          setListLoading(false)
         }
       })
 
@@ -204,149 +265,350 @@ export function CounterpartiesPage() {
       active = false
     }
   }, [
-    debouncedSearch,
-    subprocessFilter,
-    statusFilter,
-    calendarFilter,
-    page,
+    query.category,
+    query.search,
+    query.status,
+    query.page,
     refreshKey,
   ])
+
+  useEffect(() => {
+    if (!notificationCounterpartyId) {
+      return
+    }
+
+    let active = true
+
+    getCounterparty(notificationCounterpartyId)
+      .then((data) => {
+        if (!active) {
+          return
+        }
+
+        setDetail(data)
+        setModal({
+          mode: 'history',
+          item: data,
+        })
+        setModalError('')
+      })
+      .catch((loadError) => {
+        if (active) {
+          setModalError(
+            getApiErrorMessage(
+              loadError,
+              'No fue posible cargar la contraparte',
+            ),
+          )
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDetailLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [notificationCounterpartyId])
 
   useEffect(() => {
     if (!success) {
       return
     }
 
-    const timeout = window.setTimeout(() => setSuccess(''), 4000)
+    const timeout = window.setTimeout(() => setSuccess(''), 4500)
     return () => window.clearTimeout(timeout)
   }, [success])
 
-  const activeSubprocesses = useMemo(
-    () => subprocesses.filter((subprocess) => subprocess.active),
-    [subprocesses],
-  )
-
-  const hasFilters = Boolean(
-    searchTerm.trim() ||
-      subprocessFilter ||
-      statusFilter ||
-      calendarFilter,
-  )
-
-  const refresh = () => setRefreshKey((value) => value + 1)
-
-  const handleSaved = (message: string) => {
-    setError('')
-    setSuccess(message)
-    refresh()
+  const selectCategory = (category: CategorySummary) => {
+    setSelectedCategoryKey(category.key)
+    setSearchDraft('')
+    setList(null)
+    setListLoading(true)
+    setListError('')
+    setQuery({
+      search: '',
+      category: category.key,
+      status: 'ACTIVE',
+      page: 1,
+    })
   }
 
-  const clearFilters = () => {
-    setSearchTerm('')
-    setSubprocessFilter('')
-    setStatusFilter('')
-    setCalendarFilter('')
-    setPage(1)
+  const backToCategories = () => {
+    setSelectedCategoryKey(null)
+    setSearchDraft('')
+    setList(null)
+    setListLoading(false)
+    setListError('')
+    setQuery({
+      search: '',
+      category: '',
+      status: 'ACTIVE',
+      page: 1,
+    })
   }
 
-  const openEdit = async (id: string) => {
-    setLoadingEditId(id)
-    setError('')
+  const changeStatus = (next: CounterpartyStatus) => {
+    if (next === query.status) {
+      return
+    }
+
+    setListLoading(true)
+    setQuery((current) => ({ ...current, status: next, page: 1 }))
+  }
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setListLoading(true)
+    setQuery((current) => ({
+      ...current,
+      search: searchDraft.trim(),
+      page: 1,
+    }))
+  }
+
+  const openModal = async (
+    mode: ModalMode,
+    item: CounterpartyListItem,
+  ) => {
+    setModal({ mode, item })
+    setDetail(null)
+    setDetailLoading(true)
+    setModalError('')
+    setSuccess('')
+
+    if (mode === 'evaluate') {
+      setDecision('CONTINUE')
+      setNotes('')
+    }
+
+    if (mode === 'reactivate') {
+      setReactivateDate(addSixMonths(todayDateInput()))
+      setNotes('')
+    }
 
     try {
-      setEditing(await getCounterparty(id))
+      const data = await getCounterparty(item.id)
+      setDetail(data)
     } catch (loadError) {
-      setError(
+      setModalError(
         getApiErrorMessage(
           loadError,
-          'No fue posible cargar la contraparte',
+          'No fue posible cargar el detalle de la contraparte',
         ),
       )
     } finally {
-      setLoadingEditId(null)
+      setDetailLoading(false)
     }
   }
 
-  const total = result?.meta.total ?? 0
-  const totalPages = result?.meta.totalPages ?? 0
-  const canCreate = activeSubprocesses.length > 0
+  const refresh = () => {
+    setCategoriesLoading(true)
+    setListLoading(Boolean(query.category))
+    setRefreshKey((value) => value + 1)
+  }
+
+  const syncArriendos = async () => {
+    if (syncingArriendos) {
+      return
+    }
+
+    setSyncingArriendos(true)
+    setCategoriesError('')
+
+    try {
+      const result = await syncArriendosFromExternal()
+      setSuccess(
+        `Sincronización completada: ${result.created} nuevas contrapartes de Arriendos, ${result.alreadyExisting} ya existían.`,
+      )
+      refresh()
+    } catch (syncError) {
+      setCategoriesError(
+        getApiErrorMessage(
+          syncError,
+          'No fue posible sincronizar las contrapartes desde FR-SG-79',
+        ),
+      )
+    } finally {
+      setSyncingArriendos(false)
+    }
+  }
+
+  const syncColocadores = async () => {
+    if (syncingColocadores) {
+      return
+    }
+
+    setSyncingColocadores(true)
+    setCategoriesError('')
+
+    try {
+      const result = await syncColocadoresFromExternal()
+      setSuccess(
+        `Sincronización completada: ${result.created} nuevas contrapartes de Colocadores independientes, ${result.alreadyExisting} ya existían.`,
+      )
+      refresh()
+    } catch (syncError) {
+      setCategoriesError(
+        getApiErrorMessage(
+          syncError,
+          'No fue posible sincronizar las contrapartes desde FR-SG-81',
+        ),
+      )
+    } finally {
+      setSyncingColocadores(false)
+    }
+  }
+
+  const closeModal = () => {
+    setModal(null)
+    setDetail(null)
+    setModalError('')
+
+    if (notificationCounterpartyId) {
+      navigate('/contrapartes', { replace: true })
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!modal || submitting) {
+      return
+    }
+
+    if (
+      modal.mode === 'reactivate' &&
+      notes.trim().length < 5
+    ) {
+      setModalError(
+        'Ingrese el motivo de la reactivación (mínimo 5 caracteres).',
+      )
+      return
+    }
+
+    setSubmitting(true)
+    setModalError('')
+
+    try {
+      if (modal.mode === 'evaluate') {
+        const result = await evaluateRisk(modal.item.id, {
+          decision,
+          evaluatedAt: evaluationDate,
+          notes: notes.trim() || undefined,
+        })
+
+        setSuccess(
+          decision === 'CONTINUE'
+            ? `Evaluación registrada. Próximo seguimiento: ${formatDate(result.nextFollowUpDate)}.`
+            : `Contraparte ${modal.item.businessName} archivada.`,
+        )
+      } else if (modal.mode === 'reactivate') {
+        await reactivateCounterparty(modal.item.id, {
+          reason: notes.trim(),
+          nextFollowUpDate: reactivateDate || undefined,
+        })
+
+        setSuccess(
+          `Contraparte ${modal.item.businessName} reactivada.`,
+        )
+      } else {
+        closeModal()
+        return
+      }
+
+      refresh()
+      closeModal()
+    } catch (submitError) {
+      setModalError(
+        getApiErrorMessage(
+          submitError,
+          'No fue posible guardar la evaluación',
+        ),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const rows = list?.data ?? []
+  const selectedCategory =
+    categories.find(
+      (category) => category.key === selectedCategoryKey,
+    ) ?? null
+  const isColocadores =
+    selectedCategoryKey === 'COLOCADORES_INDEPENDIENTES'
+  const documentLabel = isColocadores ? 'CC' : 'NIT'
+  const searchPlaceholder = isColocadores
+    ? 'Buscar por CC o nombre'
+    : 'Buscar por NIT o razón social'
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Contrapartes
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Consulte el calendario semestral y administre las
-            contrapartes del área.
-          </p>
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-900/5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 items-center justify-center rounded-lg bg-amber-100 text-emerald-900">
+              <ClipboardCheck className="size-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">
+                Contrapartes
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                {selectedCategory
+                  ? `Gestione las contrapartes de ${selectedCategory.name} y conserve el historial de decisiones.`
+                  : 'Seleccione una categoría para gestionar sus contrapartes en seguimiento.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {selectedCategoryKey && (
+              <button
+                type="button"
+                onClick={backToCategories}
+                className={secondaryButtonClass}
+              >
+                <ArrowLeft className="size-4" />
+                Volver a categorías
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={refresh}
+              className={secondaryButtonClass}
+            >
+              <RefreshCw className="size-4" />
+              Actualizar
+            </button>
+          </div>
         </div>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            disabled={!canCreate}
-            title={
-              canCreate
-                ? undefined
-                : 'Debe existir al menos un subproceso activo'
-            }
-            className={primaryButtonClass}
-          >
-            <Plus className="size-4" />
-            Nueva contraparte
-          </button>
+
+        {selectedCategoryKey && (
+          <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-200">
+            {(
+              [
+                ['ACTIVE', 'En seguimiento'],
+                ['ARCHIVED', 'Contrapartes archivadas'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => changeStatus(value)}
+                className={`border-b-2 px-3 py-2 text-sm font-medium transition ${
+                  query.status === value
+                    ? 'border-amber-400 text-emerald-900'
+                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         )}
-      </div>
-
-      {isAdmin && !subprocessesLoading && !canCreate && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          No hay subprocesos activos.{' '}
-          <Link
-            to="/subprocesos"
-            className="font-medium underline underline-offset-2"
-          >
-            Cree o active un subproceso
-          </Link>{' '}
-          antes de registrar contrapartes.
-        </div>
-      )}
-
-      {subprocessError && (
-        <div className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
-          <span>{subprocessError}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setSubprocessesLoading(true)
-              setSubprocessError('')
-              void loadSubprocesses()
-            }}
-            className="self-start rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 transition hover:bg-amber-100 sm:self-auto"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setIsLoading(true)
-              setError('')
-              refresh()
-            }}
-            className="self-start rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 sm:self-auto"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
+      </section>
 
       {success && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -354,326 +616,573 @@ export function CounterpartiesPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label htmlFor="counterparty-search" className={labelClass}>
-              Buscar
-            </label>
-            <input
-              id="counterparty-search"
-              type="search"
-              value={searchTerm}
-              onChange={(event) => {
-                setSearchTerm(event.target.value)
-                setPage(1)
-              }}
-              placeholder="NIT o razón social"
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="counterparty-subprocess-filter"
-              className={labelClass}
-            >
-              Subproceso
-            </label>
-            <select
-              id="counterparty-subprocess-filter"
-              value={subprocessFilter}
-              onChange={(event) => {
-                setSubprocessFilter(event.target.value)
-                setPage(1)
-              }}
-              className={inputClass}
-            >
-              <option value="">Todos</option>
-              {subprocesses.map((subprocess) => (
-                <option key={subprocess.id} value={subprocess.id}>
-                  {subprocess.name}
-                  {subprocess.active ? '' : ' (inactivo)'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label
-              htmlFor="counterparty-status-filter"
-              className={labelClass}
-            >
-              Estado del registro
-            </label>
-            <select
-              id="counterparty-status-filter"
-              value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(
-                  event.target.value as CounterpartyStatus | '',
-                )
-                setPage(1)
-              }}
-              className={inputClass}
-            >
-              <option value="">Todos</option>
-              <option value="ACTIVE">Activas</option>
-              <option value="ARCHIVED">Archivadas</option>
-            </select>
-          </div>
-
-          <div>
-            <label
-              htmlFor="counterparty-calendar-filter"
-              className={labelClass}
-            >
-              Estado del calendario
-            </label>
-            <select
-              id="counterparty-calendar-filter"
-              value={calendarFilter}
-              onChange={(event) => {
-                setCalendarFilter(
-                  event.target.value as CalendarStatus | '',
-                )
-                setPage(1)
-              }}
-              className={inputClass}
-            >
-              <option value="">Todos</option>
-              <option value="OVERDUE">Vencido</option>
-              <option value="PENDING">Pendiente (0 a 15 días)</option>
-              <option value="UPCOMING">Próximo (16 a 30 días)</option>
-              <option value="ON_TIME">Al día (más de 30 días)</option>
-              <option value="UNSCHEDULED">Sin programar</option>
-            </select>
-          </div>
+      {listError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {listError}
         </div>
+      )}
 
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-slate-500">
-            {total} contraparte{total === 1 ? '' : 's'} encontrada
-            {total === 1 ? '' : 's'}
-          </p>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className={`${secondaryButtonClass} px-3 py-1.5 text-xs`}
-            >
-              Limpiar filtros
-            </button>
+      {!selectedCategoryKey && (
+        <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm shadow-slate-900/5">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+              <LayoutGrid className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Seleccione una categoría
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Cada categoría mantiene sus contrapartes, subprocesos e
+                historial de evaluaciones de forma independiente.
+              </p>
+            </div>
+          </div>
+
+          {categoriesError && (
+            <div className="mt-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {categoriesError}
+            </div>
           )}
-        </div>
-      </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
+          {categoriesLoading ? (
+            <div className="mt-6 flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
+              <Loader2 className="size-5 animate-spin" />
+              Cargando categorías...
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {categories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => selectCategory(category)}
+                  className="group rounded-xl border border-slate-200 bg-white p-5 text-left transition hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-slate-900">
+                      {category.name}
+                    </p>
+                    <LayoutGrid className="size-5 text-slate-400 group-hover:text-amber-600" />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="slate">
+                      {category.activeCount} en seguimiento
+                    </Badge>
+                    <Badge tone="amber">
+                      {category.archivedCount} archivadas
+                    </Badge>
+                  </div>
+                  <p className="mt-4 text-sm font-medium text-emerald-700">
+                    Ver contrapartes
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {selectedCategoryKey && (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <form onSubmit={handleSearch} className="flex flex-1 gap-2">
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
+              <input
+                value={searchDraft}
+                onChange={(event) =>
+                  setSearchDraft(event.target.value)
+                }
+                placeholder={searchPlaceholder}
+                aria-label="Buscar contraparte"
+                className={`${inputClass} pl-9`}
+              />
+            </div>
+            <button type="submit" className={secondaryButtonClass}>
+              Buscar
+            </button>
+          </form>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {selectedCategoryKey === 'ARRIENDOS' && (
+              <button
+                type="button"
+                onClick={syncArriendos}
+                disabled={syncingArriendos}
+                className={secondaryButtonClass}
+              >
+                {syncingArriendos ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Traer de FR-SG-79
+              </button>
+            )}
+            {selectedCategoryKey === 'COLOCADORES_INDEPENDIENTES' && (
+              <button
+                type="button"
+                onClick={syncColocadores}
+                disabled={syncingColocadores}
+                className={secondaryButtonClass}
+              >
+                {syncingColocadores ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Traer de FR-SG-81
+              </button>
+            )}
+            <p className="text-sm text-slate-500">
+              {list?.meta.total ?? 0} registro
+              {list?.meta.total === 1 ? '' : 's'}
+            </p>
+          </div>
+        </div>
+
+        {listLoading ? (
+          <div className="flex items-center justify-center gap-3 px-4 py-20 text-sm text-slate-500">
             <Loader2 className="size-5 animate-spin" />
             Cargando contrapartes...
           </div>
-        ) : !result || result.data.length === 0 ? (
-          <div className="px-6 py-16 text-center">
+        ) : rows.length === 0 ? (
+          <div className="px-4 py-20 text-center">
             <p className="text-sm font-medium text-slate-900">
-              {hasFilters
-                ? 'No se encontraron contrapartes'
-                : 'No hay contrapartes registradas'}
+              No hay contrapartes para mostrar
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              {hasFilters
-                ? 'Ajuste la búsqueda o los filtros seleccionados.'
-                : isAdmin
-                  ? 'Cree la primera contraparte para iniciar el seguimiento.'
-                  : 'Aún no hay contrapartes disponibles.'}
+              Ajuste la búsqueda o cambie de sección.
             </p>
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">NIT</th>
-                    <th className="px-4 py-3 font-medium">
-                      Razón social
-                    </th>
-                    <th className="hidden px-4 py-3 font-medium lg:table-cell">
-                      Subproceso
-                    </th>
-                    <th className="px-4 py-3 font-medium">
-                      Próximo seguimiento
-                    </th>
-                    <th className="px-4 py-3 font-medium">Estado</th>
-                    <th className="px-4 py-3 text-right font-medium">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {result.data.map((counterparty) => (
-                    <tr
-                      key={counterparty.id}
-                      className="hover:bg-slate-50/60"
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
-                        {counterparty.nit}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link
-                          to={`/contrapartes/${counterparty.id}`}
-                          className="font-medium text-slate-900 hover:text-slate-700 hover:underline"
-                        >
-                          {counterparty.businessName}
-                        </Link>
-                        <p className="text-xs text-slate-500 lg:hidden">
-                          {counterparty.subprocess.name}
-                        </p>
-                      </td>
-                      <td className="hidden px-4 py-3 lg:table-cell">
-                        <span className="text-slate-600">
-                          {counterparty.subprocess.name}
-                        </span>
-                        {!counterparty.subprocess.active && (
-                          <span className="ml-1 text-xs text-slate-500">
-                            (inactivo)
-                          </span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <p className="text-slate-700">
-                          {formatDate(counterparty.nextFollowUpDate)}
-                        </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50/70 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Contraparte</th>
+                  <th className="px-4 py-3 font-medium">Estado</th>
+                  <th className="px-4 py-3 font-medium">
+                    Último seguimiento
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    Próximo seguimiento
+                  </th>
+                  <th className="px-4 py-3 font-medium">
+                    Motivo de seguimiento
+                  </th>
+                  <th className="px-4 py-3 text-right font-medium">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="transition hover:bg-amber-50/40"
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-900">
+                        {item.businessName}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {documentLabel} {item.nit}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isColocadores ? (
                         <Badge
                           tone={
-                            calendarStatusTones[
-                              counterparty.calendarStatus
-                            ]
+                            colocadoresBadge(item).tone
                           }
                         >
-                          {
-                            calendarStatusLabels[
-                              counterparty.calendarStatus
-                            ]
-                          }
+                          {colocadoresBadge(item).label}
                         </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          tone={
-                            counterparty.status === 'ACTIVE'
-                              ? 'green'
-                              : 'slate'
-                          }
-                        >
-                          {counterpartyStatusLabels[counterparty.status]}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            to={`/contrapartes/${counterparty.id}`}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge tone={statusTones[item.status]}>
+                            {statusLabels[item.status]}
+                          </Badge>
+                          <Badge
+                            tone={calendarTones[item.calendarStatus]}
                           >
-                            <Eye className="size-3.5" />
-                            Ver
-                          </Link>
-
-                          {isAdmin && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void openEdit(counterparty.id)
-                                }
-                                disabled={
-                                  loadingEditId === counterparty.id
-                                }
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {loadingEditId ===
-                                counterparty.id ? (
-                                  <Loader2 className="size-3.5 animate-spin" />
-                                ) : (
-                                  <Pencil className="size-3.5" />
-                                )}
-                                Editar
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setStatusTarget({
-                                    counterparty,
-                                    mode:
-                                      counterparty.status === 'ACTIVE'
-                                        ? 'archive'
-                                        : 'reactivate',
-                                  })
-                                }
-                                className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition ${
-                                  counterparty.status === 'ACTIVE'
-                                    ? 'border-red-200 text-red-700 hover:bg-red-50'
-                                    : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
-                                }`}
-                              >
-                                {counterparty.status === 'ACTIVE' ? (
-                                  <Archive className="size-3.5" />
-                                ) : (
-                                  <RotateCcw className="size-3.5" />
-                                )}
-                                {counterparty.status === 'ACTIVE'
-                                  ? 'Archivar'
-                                  : 'Reactivar'}
-                              </button>
-                            </>
-                          )}
+                            {calendarLabels[item.calendarStatus]}
+                          </Badge>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <Pagination
-              page={result.meta.page}
-              totalPages={totalPages}
-              total={total}
-              onPageChange={setPage}
-            />
-          </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDate(item.lastFollowUpDate)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDate(item.nextFollowUpDate)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {item.observations ? (
+                        <p
+                          className="line-clamp-2 max-w-sm text-xs text-slate-600"
+                          title={item.observations}
+                        >
+                          {item.observations}
+                        </p>
+                      ) : (
+                        <span className="text-xs text-slate-400">
+                          —
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openModal('history', item)
+                          }
+                          className={secondaryButtonClass}
+                        >
+                          <History className="size-4" />
+                          Historial
+                        </button>
+                        {item.status === 'ACTIVE' ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openModal('evaluate', item)
+                            }
+                            className={successButtonClass}
+                          >
+                            Evaluar
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openModal('reactivate', item)
+                            }
+                            className={primaryButtonClass}
+                          >
+                            <RotateCcw className="size-4" />
+                            Reactivar
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
 
-      {createOpen && (
-        <CounterpartyFormModal
-          mode="create"
-          subprocesses={subprocesses}
-          onClose={() => setCreateOpen(false)}
-          onSaved={handleSaved}
-        />
+        {list && (
+          <Pagination
+            page={query.page}
+            totalPages={list.meta.totalPages}
+            total={list.meta.total}
+            onPageChange={(page) => {
+              setListLoading(true)
+              setQuery((current) => ({ ...current, page }))
+            }}
+          />
+        )}
+        </section>
       )}
 
-      {editing && (
-        <CounterpartyFormModal
-          mode="edit"
-          counterparty={editing}
-          subprocesses={subprocesses}
-          onClose={() => setEditing(null)}
-          onSaved={handleSaved}
-        />
-      )}
+      <Modal
+        open={Boolean(modal)}
+        size={modal?.mode === 'history' ? 'lg' : 'md'}
+        title={
+          modal?.mode === 'evaluate'
+            ? 'Evaluación de riesgo'
+            : modal?.mode === 'reactivate'
+              ? 'Reactivar contraparte'
+              : 'Historial de evaluaciones'
+        }
+        description={modal?.item.businessName}
+        onClose={closeModal}
+      >
+        {detailLoading ? (
+          <div className="flex items-center justify-center gap-3 py-12 text-sm text-slate-500">
+            <Loader2 className="size-5 animate-spin" />
+            Cargando detalle...
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {modalError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {modalError}
+              </div>
+            )}
 
-      {statusTarget && (
-        <CounterpartyStatusModal
-          mode={statusTarget.mode}
-          counterparty={statusTarget.counterparty}
-          onClose={() => setStatusTarget(null)}
-          onSaved={handleSaved}
-        />
-      )}
+            {detail && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      {documentLabel}
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {detail.nit}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Categoría
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {detail.category.name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Último seguimiento
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {formatDate(detail.lastFollowUpDate)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Próximo seguimiento
+                    </p>
+                    <p className="mt-1 font-medium text-slate-900">
+                      {formatDate(detail.nextFollowUpDate)}
+                    </p>
+                  </div>
+                </div>
+                {detail.observations && (
+                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/70 p-3">
+                    <p className="text-xs uppercase tracking-wide text-amber-800">
+                      Motivo de seguimiento
+                    </p>
+                    <p className="mt-1 whitespace-pre-line text-sm text-slate-800">
+                      {detail.observations}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {modal?.mode === 'evaluate' && (
+              <>
+                <p className="text-sm font-medium text-slate-900">
+                  ¿La contraparte continúa presentando riesgo?
+                </p>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setDecision('CONTINUE')}
+                    className={`rounded-lg border p-4 text-left text-sm transition ${
+                      decision === 'CONTINUE'
+                        ? 'border-amber-300 bg-amber-50 text-slate-900 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <p className="font-semibold">Sí</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Permanece en seguimiento; próxima evaluación en
+                      6 meses.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDecision('ARCHIVE')}
+                    className={`rounded-lg border p-4 text-left text-sm transition ${
+                      decision === 'ARCHIVE'
+                        ? 'border-amber-300 bg-amber-50 text-slate-900 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <p className="font-semibold">No</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Se archiva y conserva su historial.
+                    </p>
+                  </button>
+                </div>
+
+                {decision === 'CONTINUE' && (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    Próximo seguimiento programado:{' '}
+                    <span className="font-semibold">
+                      {formatDate(followUpPreview)}
+                    </span>
+                  </div>
+                )}
+
+                <div>
+                  <label className={labelClass} htmlFor="risk-notes">
+                    Observaciones (opcional)
+                  </label>
+                  <textarea
+                    id="risk-notes"
+                    rows={3}
+                    value={notes}
+                    onChange={(event) =>
+                      setNotes(event.target.value)
+                    }
+                    className={inputClass}
+                    placeholder="Detalle de la evaluación"
+                  />
+                </div>
+              </>
+            )}
+
+            {modal?.mode === 'reactivate' && (
+              <>
+                <div>
+                  <label
+                    className={labelClass}
+                    htmlFor="reactivate-date"
+                  >
+                    Nueva fecha de seguimiento
+                  </label>
+                  <input
+                    id="reactivate-date"
+                    type="date"
+                    value={reactivateDate}
+                    onChange={(event) =>
+                      setReactivateDate(event.target.value)
+                    }
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    className={labelClass}
+                    htmlFor="reactivate-reason"
+                  >
+                    Motivo de la reactivación
+                  </label>
+                  <textarea
+                    id="reactivate-reason"
+                    rows={3}
+                    required
+                    value={notes}
+                    onChange={(event) =>
+                      setNotes(event.target.value)
+                    }
+                    className={inputClass}
+                    placeholder="Explique por qué vuelve a seguimiento"
+                  />
+                </div>
+              </>
+            )}
+
+            {modal?.mode === 'history' && detail && (
+              <>
+                {detail.archiveReason && (
+                  <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
+                    <p className="font-medium text-slate-900">
+                      Motivo del archivado
+                    </p>
+                    <p className="mt-1 whitespace-pre-line text-slate-600">
+                      {detail.archiveReason}
+                    </p>
+                    {detail.archivedAt && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {formatDateTime(detail.archivedAt)}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {detail.riskEvaluations.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-500">
+                    Aún no hay evaluaciones de riesgo registradas.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full min-w-[720px] text-left text-sm">
+                      <thead className="border-b border-slate-200 bg-slate-50/70 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">
+                            Decisión
+                          </th>
+                          <th className="px-3 py-2 font-medium">
+                            Fecha
+                          </th>
+                          <th className="px-3 py-2 font-medium">
+                            Próximo seguimiento
+                          </th>
+                          <th className="px-3 py-2 font-medium">
+                            Registrado por
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {detail.riskEvaluations.map((evaluation) => (
+                          <tr key={evaluation.id}>
+                            <td className="px-3 py-2">
+                              <Badge
+                                tone={
+                                  decisionTones[
+                                    evaluation.decision
+                                  ]
+                                }
+                              >
+                                {decisionLabels[evaluation.decision]}
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {formatDate(evaluation.evaluatedAt)}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {formatDate(
+                                evaluation.nextFollowUpDate,
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-slate-600">
+                              {evaluation.createdBy.name}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {modal && modal.mode !== 'history' && (
+              <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className={secondaryButtonClass}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className={
+                    modal.mode === 'evaluate' &&
+                    decision === 'ARCHIVE'
+                      ? dangerButtonClass
+                      : primaryButtonClass
+                  }
+                >
+                  {submitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : modal.mode === 'evaluate' ? (
+                    <ClipboardCheck className="size-4" />
+                  ) : (
+                    <Archive className="size-4" />
+                  )}
+                  {modal.mode === 'evaluate'
+                    ? 'Guardar evaluación'
+                    : 'Confirmar reactivación'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsInt,
   IsObject,
+  IsString,
   IsOptional,
   Max,
   Min,
@@ -17,6 +18,10 @@ export class ImportOptionsDto {
   @Type(() => Boolean)
   @IsBoolean({ message: 'La opción de subprocesos no es válida' })
   createMissingSubprocesses?: boolean
+
+  @IsOptional()
+  @IsString({ message: 'La categoría no es válida' })
+  categoryKey?: string
 
   @IsOptional()
   @Type(() => Boolean)

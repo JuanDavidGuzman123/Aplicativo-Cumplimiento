@@ -16,10 +16,83 @@ export class ExternalWorkbookReaderService {
 
   async read(): Promise<ExternalWorkbookData> {
     if (this.config.source === 'file') {
-      return this.readLocal()
+      return this.readWorkbook(
+        this.config.localWorkbookPath,
+        this.config.worksheetName,
+      )
     }
 
     return this.readGraph()
+  }
+
+  async readWorkbook(
+    filePath: string,
+    worksheetName?: string,
+  ): Promise<ExternalWorkbookData> {
+    if (!filePath) {
+      throw new Error('Falta la ruta del libro local')
+    }
+
+    const fileStats = await stat(filePath).catch(() => null)
+
+    if (!fileStats || !fileStats.isFile()) {
+      throw new Error(`No se encontró el archivo local: ${filePath}`)
+    }
+
+    const extension = extname(filePath).toLowerCase()
+
+    if (extension !== '.xlsx' && extension !== '.xlsm') {
+      throw new Error('El archivo local debe ser .xlsx o .xlsm')
+    }
+
+    const fileName = basename(filePath)
+    const buffer = await readFile(filePath).catch(() => {
+      throw new Error(`No se pudo leer el archivo local: ${filePath}`)
+    })
+    const parsed = await parseWorkbook(buffer, fileName)
+    const sheets = parsed.files[0]?.sheets ?? []
+
+    if (sheets.length === 0) {
+      throw new Error(
+        'No se encontraron hojas con datos en el archivo local',
+      )
+    }
+
+    const configuredWorksheet = worksheetName?.trim()
+    const selectedSheet = configuredWorksheet
+      ? sheets.find(
+          (sheet) =>
+            sheet.name.trim().toLowerCase() ===
+            configuredWorksheet.toLowerCase(),
+        )
+      : sheets[0]
+
+    if (!selectedSheet) {
+      throw new Error(
+        `No se encontró la hoja "${configuredWorksheet}". Hojas disponibles: ${sheets
+          .map((sheet) => sheet.name)
+          .join(', ')}`,
+      )
+    }
+
+    const sourceName = `Hoja: ${selectedSheet.name}`
+    const rows = selectedSheet.rows
+      .slice(0, this.config.maxRows)
+      .map((row) => ({
+        rowNumber: row.rowNumber,
+        values: row.values,
+      }))
+
+    return {
+      fileName,
+      sourceName,
+      sourceUrl: null,
+      tableOrWorksheet: sourceName,
+      headers: selectedSheet.headers,
+      rows,
+      version: createHash('sha256').update(buffer).digest('hex'),
+      lastModifiedDateTime: fileStats.mtime.toISOString(),
+    }
   }
 
   private async readGraph(): Promise<ExternalWorkbookData> {
@@ -87,79 +160,6 @@ export class ExternalWorkbookReaderService {
       rows,
       version,
       lastModifiedDateTime: item.lastModifiedDateTime ?? null,
-    }
-  }
-
-  private async readLocal(): Promise<ExternalWorkbookData> {
-    const filePath = this.config.localWorkbookPath
-
-    if (!filePath) {
-      throw new Error(
-        'Falta EXTERNAL_WORKBOOK_PATH para leer el libro local',
-      )
-    }
-
-    const fileStats = await stat(filePath).catch(() => null)
-
-    if (!fileStats || !fileStats.isFile()) {
-      throw new Error(`No se encontró el archivo local: ${filePath}`)
-    }
-
-    const extension = extname(filePath).toLowerCase()
-
-    if (extension !== '.xlsx' && extension !== '.xlsm') {
-      throw new Error(
-        'El archivo local debe ser .xlsx o .xlsm',
-      )
-    }
-
-    const fileName = basename(filePath)
-    const buffer = await readFile(filePath).catch(() => {
-      throw new Error(`No se pudo leer el archivo local: ${filePath}`)
-    })
-    const parsed = await parseWorkbook(buffer, fileName)
-    const sheets = parsed.files[0]?.sheets ?? []
-
-    if (sheets.length === 0) {
-      throw new Error(
-        'No se encontraron hojas con datos en el archivo local',
-      )
-    }
-
-    const configuredWorksheet = this.config.worksheetName
-    const selectedSheet = configuredWorksheet
-      ? sheets.find(
-          (sheet) =>
-            sheet.name.trim().toLowerCase() ===
-            configuredWorksheet.trim().toLowerCase(),
-        )
-      : sheets[0]
-
-    if (!selectedSheet) {
-      throw new Error(
-        `No se encontró la hoja "${configuredWorksheet}". Hojas disponibles: ${sheets
-          .map((sheet) => sheet.name)
-          .join(', ')}`,
-      )
-    }
-
-    const sourceName = `Hoja: ${selectedSheet.name}`
-    const rows = selectedSheet.rows
-      .slice(0, this.config.maxRows)
-      .map((row) => ({
-        rowNumber: row.rowNumber,
-        values: row.values,
-      }))
-
-    return {
-      fileName,
-      sourceName,
-      sourceUrl: null,
-      tableOrWorksheet: sourceName,
-      headers: selectedSheet.headers,
-      rows,
-      version: createHash('sha256').update(buffer).digest('hex'),
-      lastModifiedDateTime: fileStats.mtime.toISOString(),
     }
   }
 

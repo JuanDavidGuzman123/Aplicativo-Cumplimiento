@@ -7,6 +7,22 @@ export type CalendarStatus =
   | 'ON_TIME'
   | 'UNSCHEDULED'
 
+export type RiskDecision = 'CONTINUE' | 'ARCHIVE' | 'REACTIVATE'
+
+export type CounterpartyCategory = {
+  id: string
+  key: string
+  name: string
+}
+
+export type CategorySummary = CounterpartyCategory & {
+  active: boolean
+  sortOrder: number
+  activeCount: number
+  archivedCount: number
+  totalCount: number
+}
+
 export type CounterpartySubprocess = {
   id: string
   name: string
@@ -22,13 +38,25 @@ export type CounterpartyListItem = {
   lastFollowUpDate: string | null
   nextFollowUpDate: string | null
   calendarStatus: CalendarStatus
+  evaluated?: boolean
+  observations: string | null
+  category: CounterpartyCategory
   subprocess: CounterpartySubprocess
 }
 
 export type RelatedUser = {
   id: string
   name: string
-  email: string
+}
+
+export type RiskEvaluation = {
+  id: string
+  decision: RiskDecision
+  evaluatedAt: string
+  nextFollowUpDate: string | null
+  notes: string | null
+  createdAt: string
+  createdBy: RelatedUser
 }
 
 export type CounterpartyDetail = CounterpartyListItem & {
@@ -42,6 +70,7 @@ export type CounterpartyDetail = CounterpartyListItem & {
   createdAt: string
   updatedAt: string
   followUpCount: number
+  riskEvaluations: RiskEvaluation[]
 }
 
 export type PaginationMeta = {
@@ -56,27 +85,33 @@ export type CounterpartyListResponse = {
   meta: PaginationMeta
 }
 
-export type CreateCounterpartyInput = {
-  nit: string
-  businessName: string
-  subprocessId: string
-  observations?: string
-  registrationDate?: string
-  nextFollowUpDate?: string
-}
-
-export type UpdateCounterpartyInput = {
-  nit?: string
-  businessName?: string
-  subprocessId?: string
-  observations?: string | null
-}
-
 export type CounterpartyQuery = {
   search?: string
+  category?: string
   subprocessId?: string
   status?: CounterpartyStatus
   calendarStatus?: CalendarStatus
   page?: number
   pageSize?: number
 }
+
+export type EvaluateRiskInput = {
+  decision: 'CONTINUE' | 'ARCHIVE'
+  evaluatedAt?: string
+  notes?: string
+}
+
+export type ReactivateCounterpartyInput = {
+  reason: string
+  nextFollowUpDate?: string
+}
+
+export type CounterpartySyncResult = {
+  sourceRows: number
+  followUpRows: number
+  created: number
+  alreadyExisting: number
+  skippedInvalid: number
+}
+
+export type ArriendosSyncResult = CounterpartySyncResult

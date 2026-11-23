@@ -165,7 +165,7 @@ describe('AnnualUpdatesService', () => {
         inactive: {
           total: 3,
           updatedThisYear: 1,
-          pendingUpdate: 2,
+          pendingUpdate: 0,
           withoutDate: 2,
         },
       },

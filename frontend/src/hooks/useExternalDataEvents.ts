@@ -3,18 +3,29 @@ import {
   getExternalStatus,
   subscribeExternalEvents,
 } from '../services/external-data'
-import type { ExternalDataStatus } from '../types/external-data'
+import type {
+  ExternalDataStatus,
+  ExternalSource,
+} from '../types/external-data'
 
 const RECONNECT_MS = 5000
 
-export function useExternalDataEvents(onUpdated: () => void) {
+export function useExternalDataEvents(
+  onUpdated: () => void,
+  source: ExternalSource = 'arriendos',
+) {
   const [status, setStatus] = useState<ExternalDataStatus | null>(null)
   const [connected, setConnected] = useState(false)
   const onUpdatedRef = useRef(onUpdated)
+  const sourceRef = useRef(source)
 
   useEffect(() => {
     onUpdatedRef.current = onUpdated
   }, [onUpdated])
+
+  useEffect(() => {
+    sourceRef.current = source
+  }, [source])
 
   useEffect(() => {
     const lifecycle = new AbortController()
@@ -22,9 +33,12 @@ export function useExternalDataEvents(onUpdated: () => void) {
     let reconnectTimer: number | null = null
 
     const loadStatus = () => {
-      void getExternalStatus()
+      void getExternalStatus(sourceRef.current)
         .then((next) => {
-          if (!lifecycle.signal.aborted) {
+          if (
+            !lifecycle.signal.aborted &&
+            next.source === sourceRef.current
+          ) {
             setStatus(next)
           }
         })
@@ -48,6 +62,7 @@ export function useExternalDataEvents(onUpdated: () => void) {
       }
 
       unsubscribe = subscribeExternalEvents({
+        source: sourceRef.current,
         onConnected: () => {
           if (!lifecycle.signal.aborted) {
             setConnected(true)
@@ -61,7 +76,10 @@ export function useExternalDataEvents(onUpdated: () => void) {
           }
         },
         onEvent: (event) => {
-          if (lifecycle.signal.aborted) {
+          if (
+            lifecycle.signal.aborted ||
+            event.source !== sourceRef.current
+          ) {
             return
           }
 
@@ -84,7 +102,14 @@ export function useExternalDataEvents(onUpdated: () => void) {
       }
       unsubscribe?.()
     }
-  }, [])
+  }, [source])
 
-  return { status, setStatus, connected }
+  const visibleStatus = status?.source === source ? status : null
+
+  return {
+    status: visibleStatus,
+    setStatus,
+    connected:
+      connected && (visibleStatus !== null || status === null),
+  }
 }

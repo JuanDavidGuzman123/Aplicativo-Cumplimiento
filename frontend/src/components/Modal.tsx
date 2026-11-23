@@ -48,7 +48,7 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-slate-900/40"
+        className="absolute inset-0 bg-slate-950/30 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -56,7 +56,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={`relative z-10 w-full ${sizeClasses[size]} rounded-xl bg-white p-6 shadow-xl`}
+        className={`relative z-10 w-full ${sizeClasses[size]} rounded-xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/10`}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -73,7 +73,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-md p-1 text-slate-400 transition hover:bg-amber-50 hover:text-slate-900"
             aria-label="Cerrar"
           >
             <X className="size-5" />

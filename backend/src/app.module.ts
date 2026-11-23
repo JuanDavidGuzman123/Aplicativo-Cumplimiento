@@ -9,10 +9,10 @@ import { AnnualUpdatesModule } from './annual-updates/annual-updates.module.js';
 import { AppController } from './app.controller.js';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { CategoriesModule } from './categories/categories.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { CounterpartiesModule } from './counterparties/counterparties.module.js';
-import { DashboardModule } from './dashboard/dashboard.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { ExternalDataModule } from './external-data/external-data.module.js';
 import { FollowUpsModule } from './follow-ups/follow-ups.module.js';
@@ -59,6 +59,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule({
     ScheduleModule.forRoot(),
     PrismaModule,
     AuditModule,
+    CategoriesModule,
     AnnualUpdatesModule,
     AnnualNotificationsModule,
     ExternalDataModule,
@@ -66,7 +67,6 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule({
     UsersModule,
     SubprocessesModule,
     CounterpartiesModule,
-    DashboardModule,
     FollowUpsModule,
     DocumentsModule,
     NotificationsModule,

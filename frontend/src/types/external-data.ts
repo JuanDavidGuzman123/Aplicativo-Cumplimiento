@@ -1,3 +1,5 @@
+export type ExternalSource = 'arriendos'
+
 export type ExternalAnnualStatus = 'ACTIVE' | 'INACTIVE'
 
 export type ExternalUpdateFilter =
@@ -24,7 +26,6 @@ export type ExternalReportMetric =
   | 'inactive'
   | 'updated-this-year'
   | 'pending-active'
-  | 'pending-inactive'
   | 'follow-up'
   | 'updates-due'
 
@@ -106,6 +107,7 @@ export type ExternalSubscriptionState =
   | 'error'
 
 export type ExternalDataStatus = {
+  source: ExternalSource
   enabled: boolean
   configured: boolean
   connection:
@@ -162,6 +164,7 @@ export type ExternalSyncStats = {
 
 export type ExternalStreamEvent = {
   type: 'status' | 'updated' | 'error'
+  source: ExternalSource
   at: string
   status: ExternalDataStatus
   changes?: ExternalSyncStats
