@@ -63,7 +63,7 @@ const config = {
   colocadoresWorksheetName: 'FR-SG-81',
 }
 
-function createService() {
+function createService(values = rowValues) {
   const reader = {
     readWorkbook: vi.fn(async () => ({
       fileName: 'FR-SG-81.xlsx',
@@ -71,7 +71,7 @@ function createService() {
       sourceUrl: null,
       tableOrWorksheet: 'Hoja: FR-SG-81',
       headers: headers.map((value) => ({ value, label: value })),
-      rows: [{ rowNumber: 4, values: rowValues } as ExternalWorkbookRow],
+      rows: [{ rowNumber: 4, values } as ExternalWorkbookRow],
       version: 'version',
       lastModifiedDateTime: now.toISOString(),
     })),
@@ -138,6 +138,7 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81',
       id,
       expect.objectContaining({
+        followUp: 'Si',
         status: 'ACTIVE',
         decision: RiskDecision.CONTINUE,
         lastEvaluation: '2026-11-23',
@@ -147,6 +148,46 @@ describe('ColocadoresWorkbookService', () => {
     )
     expect(detail.observations).toBe('Nueva observación')
     expect(detail.riskEvaluations[0].decision).toBe(RiskDecision.CONTINUE)
+  })
+
+  it('archiva escribiendo Seguimiento No en el workbook', async () => {
+    const { service, writer } = createService()
+    const listed = await service.list({ page: 1, pageSize: 10 } as never)
+    const id = listed.data[0].id
+
+    const detail = await service.evaluateRisk(
+      id,
+      {
+        decision: RiskDecision.ARCHIVE,
+        evaluatedAt: '2026-11-23',
+        notes: 'Archivada por prueba',
+      } as never,
+      'actor-id',
+    )
+
+    expect(writer.writeFields).toHaveBeenCalledWith(
+      'FR-SG-81.xlsx',
+      'FR-SG-81',
+      id,
+      expect.objectContaining({
+        followUp: 'No',
+        status: 'ARCHIVED',
+        decision: RiskDecision.ARCHIVE,
+      }),
+    )
+    expect(detail.status).toBe('ARCHIVED')
+  })
+
+  it('mantiene visibles las archivadas aunque Seguimiento sea No', async () => {
+    const archivedValues = [...rowValues]
+    archivedValues[12] = 'No'
+    archivedValues[16] = 'ARCHIVED'
+    const { service } = createService(archivedValues)
+
+    const result = await service.list({ page: 1, pageSize: 10 } as never)
+
+    expect(result.meta.total).toBe(1)
+    expect(result.data[0].status).toBe('ARCHIVED')
   })
 
   it('prepara columnas e IDs usando el writer local', async () => {

@@ -231,6 +231,8 @@ export class ColocadoresWorkbookService {
         : ''
 
     await this.writeFields(id, {
+      followUp:
+        dto.decision === RiskDecision.CONTINUE ? 'Si' : 'No',
       status:
         dto.decision === RiskDecision.CONTINUE ? 'ACTIVE' : 'ARCHIVED',
       decision: dto.decision,
@@ -266,6 +268,7 @@ export class ColocadoresWorkbookService {
       addMonths(new Date(`${today}T00:00:00Z`), 6).toISOString().slice(0, 10)
 
     await this.writeFields(id, {
+      followUp: 'Si',
       status: 'ACTIVE',
       decision: RiskDecision.REACTIVATE,
       lastEvaluation: today,
@@ -303,7 +306,11 @@ export class ColocadoresWorkbookService {
     return workbook.rows
       .filter((row) => {
         const followUp = this.valueFrom(row, workbook.headers, indexes, 'followUp')
-        return normalizeCell(followUp).toLowerCase() === 'si'
+        const archived =
+          statusFrom(this.valueFrom(row, workbook.headers, indexes, 'status')) ===
+          CounterpartyStatus.ARCHIVED
+
+        return normalizeCell(followUp).toLowerCase() === 'si' || archived
       })
       .map((row) => {
         const id =

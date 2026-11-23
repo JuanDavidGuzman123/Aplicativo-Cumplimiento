@@ -225,7 +225,7 @@ Para restaurar, detener la API, restaurar el dump con `pg_restore --clean --if-e
 - Las actualizaciones se publican por SSE autenticado (`fetch` con `Authorization`), con un badge de conexión, última actualización y sincronización manual. En modo `graph`, el webhook valida `validationToken` y `clientState`; en modo `file` no hay suscripción ni webhook y el polling de respaldo recarga según `EXTERNAL_FALLBACK_POLL_MS`.
 - La fecha límite sigue siendo la fecha de diligenciamiento más un año, con ajuste del 29 de febrero al 28. Los pendientes consideran solo diligenciamientos desde el año anterior; los inactivos solo entran en los conteos. Las alertas anuales `ANNUAL_D3` y `ANNUAL_D1` permanecen separadas de las semestrales.
 - `EXTERNAL_DATA_ENABLED` está desactivado por defecto. En modo `graph` se requieren `MICROSOFT_*`, `SHAREPOINT_DRIVE_ID`, `SHAREPOINT_ITEM_ID`, `EXTERNAL_WEBHOOK_PUBLIC_URL` y `EXTERNAL_WEBHOOK_CLIENT_STATE`; la URL pública debe apuntar a la base de la API y el backend agrega `/external-data/webhook`. En modo `file` solo se requiere `EXTERNAL_WORKBOOK_PATH`.
-- `npm test` pasa con 71 pruebas unitarias en 20 archivos y `npm run test:e2e` con 7 pruebas; build y lint pasan en backend y frontend. El modo local se validó con `FR-SG-79` (637 registros y 0 errores de mapeo). Queda pendiente Graph con consentimiento de administrador y un webhook HTTPS público.
+- `npm test` pasa con 73 pruebas unitarias en 20 archivos y `npm run test:e2e` con 7 pruebas; build y lint pasan en backend y frontend. El modo local se validó con `FR-SG-79` (637 registros y 0 errores de mapeo). Queda pendiente Graph con consentimiento de administrador y un webhook HTTPS público.
 
 ## Scripts
 

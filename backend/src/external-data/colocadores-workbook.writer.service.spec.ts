@@ -55,6 +55,7 @@ describe('ColocadoresWorkbookWriterService', () => {
     const id = uuidFromRowNumber(4)
 
     await writer.writeFields(filePath, 'FR-SG-81', id, {
+      followUp: 'Si',
       status: 'ACTIVE',
       lastEvaluation: '2026-11-23',
       nextFollowUp: '2027-05-23',
@@ -66,6 +67,7 @@ describe('ColocadoresWorkbookWriterService', () => {
     await workbook.xlsx.readFile(filePath)
     const sheet = workbook.getWorksheet('FR-SG-81')
 
+    expect(sheet?.getCell(4, 2).value).toBe('Si')
     expect(sheet?.getCell(4, 5).value).toBe('ACTIVE')
     expect(sheet?.getCell(4, 6).value).toBe('2026-11-23')
     expect(sheet?.getCell(4, 7).value).toBe('2027-05-23')

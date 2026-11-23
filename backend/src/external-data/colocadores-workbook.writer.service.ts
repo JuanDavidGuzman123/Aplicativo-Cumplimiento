@@ -1,9 +1,11 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common'
+import { CounterpartyStatus } from '@prisma/client'
 import ExcelJS from 'exceljs'
 import {
   FIELD_ALIASES,
   findHeaderIndex,
   normalizeCell,
+  statusFrom,
   uuidFromRowNumber,
   type ColocadoresPrepareResult,
   type FieldKey,
@@ -12,6 +14,7 @@ import {
 } from './colocadores-workbook.util.js'
 
 const FIELD_TO_KEY: Record<WorkbookField, FieldKey> = {
+  followUp: 'followUp',
   status: 'status',
   lastEvaluation: 'lastEvaluation',
   nextFollowUp: 'nextFollowUp',
@@ -61,6 +64,7 @@ export class ColocadoresWorkbookWriterService {
     const idIndex = indexes.id
     const documentIndex = indexes.document
     const followUpIndex = indexes.followUp
+    const statusIndex = indexes.status
 
     if (
       idIndex === undefined ||
@@ -80,8 +84,12 @@ export class ColocadoresWorkbookWriterService {
       const followUp = this.cellText(
         sheet.getCell(rowNumber, followUpIndex + 1),
       )
+      const archived =
+        statusIndex !== undefined &&
+        statusFrom(sheet.getCell(rowNumber, statusIndex + 1).value) ===
+          CounterpartyStatus.ARCHIVED
 
-      if (!document || followUp.toLowerCase() !== 'si') {
+      if (!document || (followUp.toLowerCase() !== 'si' && !archived)) {
         continue
       }
 

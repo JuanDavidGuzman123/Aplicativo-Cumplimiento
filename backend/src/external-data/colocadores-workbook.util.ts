@@ -18,6 +18,7 @@ export const FIELD_ALIASES = {
 export type FieldKey = keyof typeof FIELD_ALIASES
 
 export type WorkbookField =
+  | 'followUp'
   | 'status'
   | 'lastEvaluation'
   | 'nextFollowUp'
