@@ -54,9 +54,10 @@ describe('ColocadoresWorkbookWriterService', () => {
     expect(sheet?.getCell(4, 3).value).toBe('Observacion original')
   })
 
-  it('solo cambia Seguimiento Si/No en la fila del documento', async () => {
+  it('cambia Seguimiento Si/No y Observaciones sin agregar columnas ni filas', async () => {
     await writer.writeFields(filePath, 'FR-SG-81', uuidFromDocument(document), {
       followUp: 'No',
+      observations: 'Observacion escrita en la app',
     })
 
     const workbook = new ExcelJS.Workbook()
@@ -64,8 +65,8 @@ describe('ColocadoresWorkbookWriterService', () => {
     const sheet = workbook.getWorksheet('FR-SG-81')
 
     expect(sheet?.getCell(4, 2).value).toBe('No')
+    expect(sheet?.getCell(4, 3).value).toBe('Observacion escrita en la app')
     expect(sheet?.getCell(4, 1).value).toBe(document)
-    expect(sheet?.getCell(4, 3).value).toBe('Observacion original')
     expect(sheet?.columnCount).toBe(10)
     expect(sheet?.rowCount).toBe(4)
   })

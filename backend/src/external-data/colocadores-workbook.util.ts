@@ -17,7 +17,7 @@ export const FIELD_ALIASES = {
 
 export type FieldKey = keyof typeof FIELD_ALIASES
 
-export type WorkbookField = 'followUp'
+export type WorkbookField = 'followUp' | 'observations'
 
 export type HeaderIndexes = Partial<Record<FieldKey, number>>
 

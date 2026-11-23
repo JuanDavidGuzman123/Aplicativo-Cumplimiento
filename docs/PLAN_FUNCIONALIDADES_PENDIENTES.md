@@ -6,14 +6,14 @@
 Gestionar únicamente el seguimiento semestral de las contrapartes de FR-SG-81 en la categoría `COLOCADORES_INDEPENDIENTES`. No hay consulta separada de la base de datos, proceso de actualización anual, importación manual en UI ni mezcla con Arriendos.
 
 ### Estado
-**Implementado** el 23/11/2026: sincronización semestral desde FR-SG-81 mediante `POST /counterparties/sync-colocadores` (botón **Traer de FR-SG-81**), filtro `Seguimiento Si/No = Si` o `No` y categoría `COLOCADORES_INDEPENDIENTES`. El único cambio que la app hace en el `.xlsx` es `Seguimiento Si/No`; no agrega columnas, IDs, filas ni escribe PostgreSQL. Evaluaciones, estados, fechas y observaciones se derivan de ese campo y se conservan en memoria; Arriendos conserva su flujo en PostgreSQL. No existe ruta, menú ni API de consulta general ni de actualización anual para Colocadores.
+**Implementado** el 23/11/2026: sincronización semestral desde FR-SG-81 mediante `POST /counterparties/sync-colocadores` (botón **Traer de FR-SG-81**), filtro `Seguimiento Si/No = Si` o `No` y categoría `COLOCADORES_INDEPENDIENTES`. Los únicos cambios que la app hace en el `.xlsx` son `Seguimiento Si/No` y la celda existente `Observaciones`; no agrega columnas, IDs, filas ni escribe PostgreSQL. Evaluaciones, estados y fechas se derivan de esos campos y se conservan en memoria; Arriendos conserva su flujo en PostgreSQL. No existe ruta, menú ni API de consulta general ni de actualización anual para Colocadores.
 
 ### Fuente confirmada
 - Carpeta: `W:\124 CUMPLIMIENTO\124. PE GI CUMPLIMIENTO\1. DEBIDA DILIGENCIA\1. Colaboradores`.
 - Libro base: `FR-SG-81 Base De Datos Colocadores Independientes Y Otras Categorias.xlsx`.
 - Hoja: `FR-SG-81`.
 - Encabezados originales detectados en fila 3: `Numero de documento`, `Tipo de Documento`, `Nombres y Apellidos`, `Fecha Debida Diligencia`, `Categoria`, `Numero De Firma`, `Dirección`, `Municipio`, `Correo electronico`, `Telefono`, `Criterios De Evaluacion`, `Excepciones Si / No`, `Seguimiento Si/No`, `Observaciones`, `Riesgo Jurisdiccional`.
-- No se agregan columnas ni filas al workbook. La app solo escribe la celda existente `Seguimiento Si/No`; el identificador en memoria se deriva de `Numero de documento`.
+- No se agregan columnas ni filas al workbook. La app solo escribe las celdas existentes `Seguimiento Si/No` y `Observaciones`; el identificador en memoria se deriva de `Numero de documento`.
 - Volumen observado: 1.958 filas con documento, 1.830 documentos únicos, 119 documentos duplicados, fechas entre 2023-12-14 y 2026-11-21.
 - No existe columna A/I de estado, ni `Año`, ni `Tipo de Debida Diligencia`. Sí existe `Seguimiento Si/No`, con 6 filas `Si` en el corte observado. Ese campo es la base de entrada al seguimiento semestral y la app lo actualiza al archivar o reactivar; no se deriva estado anual.
 - Existe un listado auxiliar en `0. Actualización anual/2026/ACTIVOS NOMINA Y COLOCACION CORTE 18 NOV.xlsx`, hoja `COLOCACION`, con 258 registros activos de `Colocador Independiente`; 245 coinciden con el libro base. No se usa como entrada del proceso.
@@ -32,7 +32,7 @@ Gestionar únicamente el seguimiento semestral de las contrapartes de FR-SG-81 e
 3. Identificador: se deriva del número de documento, sin escribirlo en FR-SG-81; las evaluaciones se localizan por ese documento, nunca por la posición de la fila.
 4. El seguimiento consulta directamente las filas crudas con `Seguimiento Si/No = Si` o `No`, para que un duplicado más reciente sin seguimiento no elimine una contraparte que sí debe seguirse.
 5. Arriendos conserva su actualización anual en `/actualizacion-anual` y `/api/external-data/*`; Colocadores no tiene equivalente.
-6. Motivo: la columna `Observaciones` de FR-SG-81 no se modifica; la nueva observación de cada evaluación se muestra como **Motivo de seguimiento** solo en memoria y no se copia a PostgreSQL.
+6. Motivo: lo redactado en la app reemplaza la celda existente `Observaciones` de FR-SG-81 y se muestra como **Motivo de seguimiento**; no se copia a PostgreSQL.
 7. Documento: en la vista de Colocadores el campo `nit` se etiqueta como **CC** en tabla, detalle y buscador; Arriendos conserva la etiqueta **NIT**.
 8. Estados de la vista: `Al día`, `Revisada`, `Vencida` y `Archivada`, calculados desde `Seguimiento Si/No` y las fechas de la evaluación en memoria.
 9. `Seguimiento Si/No` refleja la acción de la app: archivar escribe `No`, continuar o reactivar escriben `Si`. Las archivadas siguen visibles por `No`.
@@ -40,7 +40,7 @@ Gestionar únicamente el seguimiento semestral de las contrapartes de FR-SG-81 e
 ### Fases
 1. **Arquitectura**: clave `colocadores` solo para caché/refresh internos; sin ruta frontend ni API pública de actualización anual. El seguimiento permanece en `/api/counterparties/sync-colocadores`.
 2. **Backend externo**: lectura, mapeo y caché por fuente para el sync; configurar variables de entorno propias; exponer solo el estado interno necesario al proceso de contrapartes.
-3. **Backend de workbook**: categoría `COLOCADORES_INDEPENDIENTES`, lectura del `.xlsx` local de FR-SG-81 y escritura únicamente de `Seguimiento Si/No`; estados, fechas, resultado y observaciones viven en memoria; sin escrituras en PostgreSQL.
+3. **Backend de workbook**: categoría `COLOCADORES_INDEPENDIENTES`, lectura del `.xlsx` local de FR-SG-81 y escritura de `Seguimiento Si/No` y `Observaciones`; estados, fechas y resultado viven en memoria; sin escrituras en PostgreSQL.
 4. **Frontend**: botón **Traer de FR-SG-81** dentro de **Contrapartes**, filtro por categoría, columna **Motivo de seguimiento** y pestañas de seguimiento/archivadas; sin apartado de base de datos, menú, tarjeta ni ruta de actualización anual.
 5. **Validación**: tests de filtro `Si`, dedupe, categorías, no duplicación y no eliminación; verificar que Arriendos no cambie; ejecutar build/lint/test.
 6. **Documentación**: actualizar README, arquitectura y `.env.example`; no commitear sin autorización explícita.
@@ -61,7 +61,7 @@ Permitir que una contraparte en seguimiento se evalúe y, según la decisión, c
 - Debe existir **Reactivar contraparte** desde archivadas: vuelve a En seguimiento, permite establecer nueva fecha de próximo seguimiento y conserva todo el historial.
 - No eliminar registros, no duplicar contrapartes, no perder historial, no modificar subprocesos asignados.
 - Registrar cada decisión y fecha; evitar evaluaciones duplicadas accidentales.
-- En Colocadores, la única celda que se escribe en FR-SG-81 es `Seguimiento Si/No`. Fechas, resultado, estado, fecha de archivado y observaciones se conservan en memoria durante la sesión del backend; PostgreSQL no recibe esos datos.
+- En Colocadores, las únicas celdas que se escriben en FR-SG-81 son `Seguimiento Si/No` y `Observaciones`. Fechas, resultado, estado y fecha de archivado se conservan en memoria durante la sesión del backend; PostgreSQL no recibe esos datos.
 
 ### Fases
 1. **Datos**: revisar `Counterparty`, `FollowUpStatus` y notificaciones; agregar campos de archivado/reactivación y un modelo de historial de evaluaciones; crear migración.
@@ -89,4 +89,4 @@ Organizar **Contrapartes en seguimiento** en categorías escalables, empezando p
 - La sincronización no sobreescribe contrapartes existentes: registra solo las nuevas con categoría `ARRIENDOS` y subproceso predeterminado **Debida diligencia**.
 - Las filas con estado `I` del libro se registran como archivadas y conservan el motivo en observaciones de archivado; el historial de evaluaciones no se altera.
 - El seguimiento de contrapartes es semestral: creaciones, evaluaciones y reactivaciones programan el próximo seguimiento 6 meses después de la fecha de diligencia/evaluación. La actualización anual con vencimiento de 12 meses existe solo para Arriendos en **Actualizaciones**; Colocadores no participa de ese flujo.
-- Colocadores independientes usa el mismo flujo de seguimiento en la UI: botón **Traer de FR-SG-81**, filtro `Seguimiento Si/No = Si` o `No`, categoría `COLOCADORES_INDEPENDIENTES` y seguimiento semestral. Lee el workbook local sin Graph y solo escribe `Seguimiento Si/No`; archivar escribe `No` y reactivar escribe `Si`. No tiene actualización anual: esa pantalla y esa API son exclusivas de Arriendos.
+- Colocadores independientes usa el mismo flujo de seguimiento en la UI: botón **Traer de FR-SG-81**, filtro `Seguimiento Si/No = Si` o `No`, categoría `COLOCADORES_INDEPENDIENTES` y seguimiento semestral. Lee el workbook local sin Graph y solo escribe `Seguimiento Si/No` y `Observaciones`; archivar escribe `No` y reactivar escribe `Si`, y ambas acciones reemplazan la observación con lo redactado en la app. No tiene actualización anual: esa pantalla y esa API son exclusivas de Arriendos.

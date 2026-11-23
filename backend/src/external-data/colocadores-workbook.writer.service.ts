@@ -21,10 +21,18 @@ export class ColocadoresWorkbookWriterService {
     const headers = this.headerValues(sheet, headerRowNumber)
     const documentIndex = findHeaderIndex(headers, FIELD_ALIASES.document)
     const followUpIndex = findHeaderIndex(headers, FIELD_ALIASES.followUp)
+    const observationsIndex = findHeaderIndex(
+      headers,
+      FIELD_ALIASES.observations,
+    )
 
-    if (documentIndex < 0 || followUpIndex < 0) {
+    if (
+      documentIndex < 0 ||
+      followUpIndex < 0 ||
+      observationsIndex < 0
+    ) {
       throw new ServiceUnavailableException(
-        'No se encontraron Numero de documento y Seguimiento Si/No en FR-SG-81',
+        'No se encontraron Numero de documento, Seguimiento Si/No u Observaciones en FR-SG-81',
       )
     }
 
@@ -57,6 +65,7 @@ export class ColocadoresWorkbookWriterService {
     fields: Partial<Record<WorkbookField, string>>,
   ): Promise<void> {
     const followUp = fields.followUp
+    const observations = fields.observations
 
     if (followUp === undefined) {
       throw new ServiceUnavailableException(
@@ -70,10 +79,18 @@ export class ColocadoresWorkbookWriterService {
     const headers = this.headerValues(sheet, headerRowNumber)
     const documentIndex = findHeaderIndex(headers, FIELD_ALIASES.document)
     const followUpIndex = findHeaderIndex(headers, FIELD_ALIASES.followUp)
+    const observationsIndex = findHeaderIndex(
+      headers,
+      FIELD_ALIASES.observations,
+    )
 
-    if (documentIndex < 0 || followUpIndex < 0) {
+    if (
+      documentIndex < 0 ||
+      followUpIndex < 0 ||
+      observationsIndex < 0
+    ) {
       throw new ServiceUnavailableException(
-        'No se encontraron Numero de documento y Seguimiento Si/No en FR-SG-81',
+        'No se encontraron Numero de documento, Seguimiento Si/No u Observaciones en FR-SG-81',
       )
     }
 
@@ -94,14 +111,29 @@ export class ColocadoresWorkbookWriterService {
       )
     }
 
-    const cell = sheet.getCell(targetRow, followUpIndex + 1)
+    let changed = false
+    const followUpCell = sheet.getCell(targetRow, followUpIndex + 1)
 
-    if (this.cellText(cell).toLowerCase() === followUp.toLowerCase()) {
-      return
+    if (this.cellText(followUpCell).toLowerCase() !== followUp.toLowerCase()) {
+      followUpCell.value = followUp
+      changed = true
     }
 
-    cell.value = followUp
-    await this.save(workbook, filePath)
+    if (observations !== undefined) {
+      const observationsCell = sheet.getCell(
+        targetRow,
+        observationsIndex + 1,
+      )
+
+      if (this.cellText(observationsCell) !== observations) {
+        observationsCell.value = observations
+        changed = true
+      }
+    }
+
+    if (changed) {
+      await this.save(workbook, filePath)
+    }
   }
 
   private async read(filePath: string): Promise<ExcelJS.Workbook> {

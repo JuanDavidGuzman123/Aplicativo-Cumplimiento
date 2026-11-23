@@ -362,13 +362,16 @@ export class ColocadoresWorkbookService {
 
   private async writeFields(
     id: string,
-    fields: Overlay & { followUp: string },
+    fields: Overlay & { followUp: string; observations: string },
   ): Promise<void> {
     await this.writer.writeFields(
       this.config.colocadoresWorkbookPath,
       this.config.colocadoresWorksheetName,
       id,
-      { followUp: fields.followUp },
+      {
+        followUp: fields.followUp,
+        observations: fields.observations,
+      },
     )
 
     const previous = this.overlay.get(id)

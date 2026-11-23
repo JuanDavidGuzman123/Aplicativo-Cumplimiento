@@ -121,9 +121,9 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 ### Workbook de seguimiento de Colocadores
 
 - FR-SG-81 se lee desde `EXTERNAL_COLOCADORES_WORKBOOK_PATH` con la hoja `EXTERNAL_COLOCADORES_WORKSHEET_NAME`. Participan las filas con `Seguimiento Si/No = Si` o `No`; no se usa ninguna columna `Estado`.
-- `POST /counterparties/sync-colocadores` solo valida que existan `Numero de documento` y `Seguimiento Si/No` y cuenta las filas. No agrega columnas, IDs, filas ni contrapartes en PostgreSQL. El identificador de la app se deriva del número de documento y no se escribe en el Excel.
-- No se usan `itemId`, `driveId`, credenciales ni permisos de Microsoft Graph para Colocadores: el único destino de escritura es la celda `Seguimiento Si/No` del `.xlsx` local.
-- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` cambian únicamente `Seguimiento Si/No` con ExcelJS: archivar escribe `No`; continuar o reactivar escriben `Si`. Fechas, decisión y observaciones de la evaluación se conservan solo en memoria durante la sesión del backend. La interfaz no confirma la operación si falla la escritura del archivo.
+- `POST /counterparties/sync-colocadores` solo valida que existan `Numero de documento`, `Seguimiento Si/No` y `Observaciones`, y cuenta las filas. No agrega columnas, IDs, filas ni contrapartes en PostgreSQL. El identificador de la app se deriva del número de documento y no se escribe en el Excel.
+- No se usan `itemId`, `driveId`, credenciales ni permisos de Microsoft Graph para Colocadores: el destino de escritura son solo las celdas existentes `Seguimiento Si/No` y `Observaciones` del `.xlsx` local.
+- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` cambian `Seguimiento Si/No` con ExcelJS —archivar escribe `No`; continuar o reactivar escriben `Si`— y reemplazan `Observaciones` con lo redactado en la app. Fechas, decisión y estado se conservan solo en memoria durante la sesión del backend. La interfaz no confirma la operación si falla la escritura del archivo.
 - Los estados mostrados son `Al día`, `Revisada`, `Vencida` y `Archivada`. El próximo seguimiento se calcula a 6 meses desde la evaluación o reactivación.
 
 ### Dashboard (Fase 8)

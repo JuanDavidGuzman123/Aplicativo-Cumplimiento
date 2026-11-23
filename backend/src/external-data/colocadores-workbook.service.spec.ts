@@ -105,7 +105,7 @@ describe('ColocadoresWorkbookService', () => {
     })
   })
 
-  it('solo cambia Seguimiento Si/No en el Excel y guarda la evaluación en memoria', async () => {
+  it('cambia Seguimiento Si/No y Observaciones en el Excel', async () => {
     const { service, writer } = createService()
     const listed = await service.list({ page: 1, pageSize: 10 } as never)
     const id = listed.data[0].id
@@ -125,13 +125,13 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81.xlsx',
       'FR-SG-81',
       id,
-      { followUp: 'Si' },
+      { followUp: 'Si', observations: 'Nueva observación' },
     )
     expect(detail.observations).toBe('Nueva observación')
     expect(detail.riskEvaluations[0].decision).toBe(RiskDecision.CONTINUE)
   })
 
-  it('archiva escribiendo Seguimiento No en el workbook', async () => {
+  it('archiva escribiendo Seguimiento No y la observación en el workbook', async () => {
     const { service, writer } = createService()
     const listed = await service.list({ page: 1, pageSize: 10 } as never)
     const id = listed.data[0].id
@@ -150,7 +150,7 @@ describe('ColocadoresWorkbookService', () => {
       'FR-SG-81.xlsx',
       'FR-SG-81',
       id,
-      { followUp: 'No' },
+      { followUp: 'No', observations: 'Archivada por prueba' },
     )
     expect(detail.status).toBe('ARCHIVED')
   })
