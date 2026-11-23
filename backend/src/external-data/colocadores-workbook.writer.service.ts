@@ -103,7 +103,7 @@ export class ColocadoresWorkbookWriterService {
     }
 
     if (created > 0 || createdHeaders > 0) {
-      await workbook.xlsx.writeFile(filePath)
+      await this.save(workbook, filePath)
     }
 
     return {
@@ -165,7 +165,7 @@ export class ColocadoresWorkbookWriterService {
       sheet.getCell(targetRow, column + 1).value = value ?? ''
     }
 
-    await workbook.xlsx.writeFile(filePath)
+    await this.save(workbook, filePath)
   }
 
   private async read(filePath: string): Promise<ExcelJS.Workbook> {
@@ -178,6 +178,25 @@ export class ColocadoresWorkbookWriterService {
       throw new ServiceUnavailableException(
         'No se pudo abrir el libro FR-SG-81',
       )
+    }
+  }
+
+  private async save(
+    workbook: ExcelJS.Workbook,
+    filePath: string,
+  ): Promise<void> {
+    try {
+      await workbook.xlsx.writeFile(filePath)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+
+      if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+        throw new ServiceUnavailableException(
+          'FR-SG-81 está abierto o bloqueado. Ciérralo en Excel y vuelve a intentarlo.',
+        )
+      }
+
+      throw error
     }
   }
 
