@@ -14,6 +14,10 @@ import {
   parseDateOnly,
 } from '../common/utils/dates.js'
 import { NIT_PATTERN, normalizeNit } from '../common/utils/nit.js'
+import { uuidFromDocument } from '../external-data/colocadores-workbook.util.js'
+import {
+  COLOCADORES_CATEGORY_KEY,
+} from '../external-data/colocadores-workbook.service.js'
 import { ExternalDataService } from '../external-data/external-data.service.js'
 import type { ExternalAnnualRow } from '../external-data/types.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -39,6 +43,8 @@ type SyncOptions = {
   rows: SyncSourceRow[]
   sourceName: string
   sourceRows: number
+  followUpRows: number
+  preserveWorkbookIds?: boolean
 }
 
 const DEFAULT_SUBPROCESS_NAME = 'Debida diligencia'
@@ -68,6 +74,7 @@ export class CounterpartySyncService {
     const rows = this.externalData
       .getAllRows()
       .filter((row) => row.requiresSemiannualFollowUp === true)
+    const followUpRows = rows.length
 
     return this.syncRows(actorId, {
       action: 'SYNC_ARRIENDOS_COUNTERPARTIES',
@@ -75,6 +82,44 @@ export class CounterpartySyncService {
       rows,
       sourceName: 'FR-SG-79',
       sourceRows: status.rowCount,
+      followUpRows,
+    })
+  }
+
+  async syncColocadores(
+    actorId: string,
+  ): Promise<CounterpartySyncResult> {
+    const status = await this.externalData.refresh(
+      'sincronización de contrapartes de Colocadores',
+      'colocadores',
+    )
+
+    if (status.rowCount === 0) {
+      throw new ServiceUnavailableException(
+        'El libro FR-SG-81 no está disponible en este momento',
+      )
+    }
+
+    const rows = this.externalData
+      .getAllColocadoresRows()
+      .filter((row) => row.requiresSemiannualFollowUp !== null)
+      .map((row): ExternalAnnualRow => ({
+        ...row,
+        status:
+          row.requiresSemiannualFollowUp === true
+            ? 'ACTIVE'
+            : 'INACTIVE',
+      }))
+    const followUpRows = rows.length
+
+    return this.syncRows(actorId, {
+      action: 'SYNC_COLOCADORES_COUNTERPARTIES',
+      categoryKey: COLOCADORES_CATEGORY_KEY,
+      rows,
+      sourceName: 'FR-SG-81',
+      sourceRows: status.rowCount,
+      followUpRows,
+      preserveWorkbookIds: true,
     })
   }
 
@@ -92,7 +137,11 @@ export class CounterpartySyncService {
     let skippedInvalid = 0
 
     for (const row of options.rows) {
-      const candidate = this.toCandidate(row, options.sourceName)
+      const candidate = this.toCandidate(
+        row,
+        options.sourceName,
+        options.preserveWorkbookIds,
+      )
 
       if (!candidate) {
         skippedInvalid += 1
@@ -131,7 +180,7 @@ export class CounterpartySyncService {
 
     const summary: CounterpartySyncResult = {
       sourceRows: options.sourceRows,
-      followUpRows: options.rows.length,
+      followUpRows: options.followUpRows,
       created: result.count,
       alreadyExisting: existingNits.size,
       skippedInvalid,
@@ -150,6 +199,7 @@ export class CounterpartySyncService {
   private toCandidate(
     row: SyncSourceRow,
     sourceName: string,
+    preserveWorkbookIds = false,
   ): Omit<
     Prisma.CounterpartyCreateManyInput,
     'categoryId' | 'subprocessId'
@@ -166,6 +216,7 @@ export class CounterpartySyncService {
       : getBusinessToday()
 
     return {
+      ...(preserveWorkbookIds ? { id: uuidFromDocument(nit) } : {}),
       nit,
       nitNormalized,
       businessName: row.businessName.trim(),

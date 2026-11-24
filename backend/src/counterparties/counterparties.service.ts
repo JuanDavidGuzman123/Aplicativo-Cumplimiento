@@ -9,6 +9,10 @@ import { CounterpartyStatus, Prisma, RiskDecision } from '@prisma/client'
 import { AuditService } from '../audit/audit.service.js'
 import { DEFAULT_CATEGORY_KEY } from '../categories/category.constants.js'
 import { ArriendosWorkbookService } from '../external-data/arriendos-workbook.service.js'
+import {
+  COLOCADORES_CATEGORY_KEY,
+  ColocadoresWorkbookService,
+} from '../external-data/colocadores-workbook.service.js'
 import type { WorkbookFieldsSnapshot } from '../external-data/colocadores-workbook.writer.service.js'
 import {
   calculateCalendarStatus,
@@ -27,6 +31,14 @@ import { CreateCounterpartyDto } from './dto/create-counterparty.dto.js'
 import { ListCounterpartiesQueryDto } from './dto/list-counterparties-query.dto.js'
 import { EvaluateRiskDto } from './dto/risk-evaluation.dto.js'
 import { UpdateCounterpartyDto } from './dto/update-counterparty.dto.js'
+
+type FollowUpWorkbook = {
+  writeFollowUp(
+    document: string,
+    followUp: string,
+    observations: string,
+  ): Promise<WorkbookFieldsSnapshot>
+}
 
 const listSelect = {
   id: true,
@@ -121,6 +133,7 @@ export class CounterpartiesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly arriendosWorkbook: ArriendosWorkbookService,
+    private readonly colocadoresWorkbook: ColocadoresWorkbookService,
   ) {}
 
   async findAll(query: ListCounterpartiesQueryDto) {
@@ -385,14 +398,15 @@ export class CounterpartiesService {
         ? addMonths(evaluatedAt, 6)
         : null
 
-    const arriendosSnapshot =
-      current.category?.key === DEFAULT_CATEGORY_KEY
-        ? await this.arriendosWorkbook.writeFollowUp(
-            current.nit,
-            dto.decision === RiskDecision.CONTINUE ? 'Si' : 'No',
-            notes ?? '',
-          )
-        : null
+    const categoryKey = current.category?.key
+    const workbook = this.workbookFor(categoryKey)
+    const workbookSnapshot = workbook
+      ? await workbook.writeFollowUp(
+          current.nit,
+          dto.decision === RiskDecision.CONTINUE ? 'Si' : 'No',
+          notes ?? '',
+        )
+      : null
 
     try {
       await this.prisma.$transaction([
@@ -429,9 +443,10 @@ export class CounterpartiesService {
         }),
       ])
     } catch (error) {
-      await this.restoreArriendosWorkbook(
+      await this.restoreWorkbook(
         current.nit,
-        arriendosSnapshot,
+        categoryKey,
+        workbookSnapshot,
       )
       throw error
     }
@@ -537,14 +552,11 @@ export class CounterpartiesService {
       ? parseDateOnly(dto.nextFollowUpDate)
       : addMonths(evaluatedAt, 6)
 
-    const arriendosSnapshot =
-      current.category?.key === DEFAULT_CATEGORY_KEY
-        ? await this.arriendosWorkbook.writeFollowUp(
-            current.nit,
-            'Si',
-            dto.reason,
-          )
-        : null
+    const categoryKey = current.category?.key
+    const workbook = this.workbookFor(categoryKey)
+    const workbookSnapshot = workbook
+      ? await workbook.writeFollowUp(current.nit, 'Si', dto.reason)
+      : null
 
     try {
       await this.prisma.$transaction([
@@ -570,9 +582,10 @@ export class CounterpartiesService {
         }),
       ])
     } catch (error) {
-      await this.restoreArriendosWorkbook(
+      await this.restoreWorkbook(
         current.nit,
-        arriendosSnapshot,
+        categoryKey,
+        workbookSnapshot,
       )
       throw error
     }
@@ -594,23 +607,40 @@ export class CounterpartiesService {
     return this.findOne(id)
   }
 
-  private async restoreArriendosWorkbook(
+  private workbookFor(
+    categoryKey: string | undefined,
+  ): FollowUpWorkbook | null {
+    if (categoryKey === DEFAULT_CATEGORY_KEY) {
+      return this.arriendosWorkbook
+    }
+
+    if (categoryKey === COLOCADORES_CATEGORY_KEY) {
+      return this.colocadoresWorkbook
+    }
+
+    return null
+  }
+
+  private async restoreWorkbook(
     nit: string,
+    categoryKey: string | undefined,
     snapshot: WorkbookFieldsSnapshot | null,
   ): Promise<void> {
-    if (!snapshot) {
+    const workbook = this.workbookFor(categoryKey)
+
+    if (!workbook || !snapshot) {
       return
     }
 
     try {
-      await this.arriendosWorkbook.writeFollowUp(
+      await workbook.writeFollowUp(
         nit,
         snapshot.followUp,
         snapshot.observations,
       )
     } catch (error) {
       this.logger.error(
-        'No fue posible restaurar las celdas de FR-SG-79 después de un error de base de datos',
+        'No fue posible restaurar las celdas del workbook después de un error de base de datos',
         error instanceof Error ? error.stack : undefined,
       )
     }

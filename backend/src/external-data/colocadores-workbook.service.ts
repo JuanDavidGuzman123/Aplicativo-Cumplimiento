@@ -18,6 +18,7 @@ import { ExternalDataConfigService } from './external-data.config.service.js'
 import { ExternalWorkbookReaderService } from './external-workbook-reader.service.js'
 import {
   ColocadoresWorkbookWriterService,
+  type WorkbookFieldsSnapshot,
 } from './colocadores-workbook.writer.service.js'
 import {
   decisionFrom,
@@ -84,6 +85,26 @@ export class ColocadoresWorkbookService {
     return this.writer.prepare(
       this.config.colocadoresWorkbookPath,
       this.config.colocadoresWorksheetName,
+    )
+  }
+
+  async writeFollowUp(
+    document: string,
+    followUp: string,
+    observations: string,
+  ): Promise<WorkbookFieldsSnapshot> {
+    if (!this.config.colocadoresReadConfigured) {
+      throw new ServiceUnavailableException(
+        'El libro FR-SG-81 no está configurado',
+      )
+    }
+
+    return this.writer.writeFieldsByDocument(
+      this.config.colocadoresWorkbookPath,
+      this.config.colocadoresWorksheetName,
+      document,
+      { followUp, observations },
+      'FR-SG-81',
     )
   }
 

@@ -4,19 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { CounterpartyStatus } from '@prisma/client'
-import {
-  COLOCADORES_CATEGORY_KEY,
-  ColocadoresWorkbookService,
-} from '../external-data/colocadores-workbook.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { DEFAULT_CATEGORY_KEY } from './category.constants.js'
 
 @Injectable()
 export class CategoriesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly colocadores: ColocadoresWorkbookService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
     const [categories, counts] = await this.prisma.$transaction([
@@ -37,27 +30,17 @@ export class CategoriesService {
       }),
     ])
 
-    const colocadoresCounts = await this.colocadores
-      .counts()
-      .catch(() => null)
-
     return categories.map((category) => {
-      const activeCount =
-        category.key === COLOCADORES_CATEGORY_KEY && colocadoresCounts
-          ? colocadoresCounts.active
-          : this.countFor(
-              counts,
-              category.id,
-              CounterpartyStatus.ACTIVE,
-            )
-      const archivedCount =
-        category.key === COLOCADORES_CATEGORY_KEY && colocadoresCounts
-          ? colocadoresCounts.archived
-          : this.countFor(
-              counts,
-              category.id,
-              CounterpartyStatus.ARCHIVED,
-            )
+      const activeCount = this.countFor(
+        counts,
+        category.id,
+        CounterpartyStatus.ACTIVE,
+      )
+      const archivedCount = this.countFor(
+        counts,
+        category.id,
+        CounterpartyStatus.ARCHIVED,
+      )
 
       return {
         id: category.id,
