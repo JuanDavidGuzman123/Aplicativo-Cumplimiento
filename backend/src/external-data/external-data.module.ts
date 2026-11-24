@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { ReplaySubject } from 'rxjs'
+import { ArriendosWorkbookService } from './arriendos-workbook.service.js'
 import { ColocadoresWorkbookService } from './colocadores-workbook.service.js'
 import { ColocadoresWorkbookWriterService } from './colocadores-workbook.writer.service.js'
 import { DelegatedTokenStore } from './delegated-token.store.js'
@@ -31,6 +32,7 @@ import type { ExternalStreamEvent } from './types.js'
     ExternalDataConfigService,
     ColocadoresWorkbookWriterService,
     ColocadoresWorkbookService,
+    ArriendosWorkbookService,
     ExternalDataCacheService,
     DelegatedTokenStore,
     MicrosoftGraphService,
@@ -42,6 +44,10 @@ import type { ExternalStreamEvent } from './types.js'
     ExternalSubscriptionService,
     ExternalChangeDetectionService,
   ],
-  exports: [ExternalDataService, ColocadoresWorkbookService],
+  exports: [
+    ExternalDataService,
+    ColocadoresWorkbookService,
+    ArriendosWorkbookService,
+  ],
 })
 export class ExternalDataModule {}

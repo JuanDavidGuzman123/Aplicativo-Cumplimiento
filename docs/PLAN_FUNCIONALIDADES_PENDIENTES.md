@@ -6,7 +6,7 @@
 Gestionar únicamente el seguimiento semestral de las contrapartes de FR-SG-81 en la categoría `COLOCADORES_INDEPENDIENTES`. No hay consulta separada de la base de datos, proceso de actualización anual, importación manual en UI ni mezcla con Arriendos.
 
 ### Estado
-**Implementado** el 23/11/2026: sincronización semestral desde FR-SG-81 mediante `POST /counterparties/sync-colocadores` (botón **Traer de FR-SG-81**), filtro `Seguimiento Si/No = Si` o `No` y categoría `COLOCADORES_INDEPENDIENTES`. Los únicos cambios que la app hace en el `.xlsx` son `Seguimiento Si/No` y la celda existente `Observaciones`; no agrega columnas, IDs, filas ni escribe PostgreSQL. Evaluaciones, estados y fechas se derivan de esos campos y se conservan en memoria; Arriendos conserva su flujo en PostgreSQL. No existe ruta, menú ni API de consulta general ni de actualización anual para Colocadores.
+**Implementado** el 23/11/2026: sincronización semestral desde FR-SG-81 mediante `POST /counterparties/sync-colocadores` (botón **Traer de FR-SG-81**), filtro `Seguimiento Si/No = Si` o `No` y categoría `COLOCADORES_INDEPENDIENTES`. Los únicos cambios que la app hace en el `.xlsx` son `Seguimiento Si/No` y la celda existente `Observaciones`; no agrega columnas, IDs, filas ni escribe PostgreSQL. Evaluaciones, estados y fechas se derivan de esos campos y se conservan en memoria; Arriendos conserva su historial en PostgreSQL y además refleja el seguimiento en FR-SG-79. No existe ruta, menú ni API de consulta general ni de actualización anual para Colocadores.
 
 ### Fuente confirmada
 - Carpeta: `W:\124 CUMPLIMIENTO\124. PE GI CUMPLIMIENTO\1. DEBIDA DILIGENCIA\1. Colaboradores`.
@@ -51,7 +51,7 @@ Gestionar únicamente el seguimiento semestral de las contrapartes de FR-SG-81 e
 Permitir que una contraparte en seguimiento se evalúe y, según la decisión, continúe en seguimiento con nueva fecha a 6 meses o pase a **Contrapartes archivadas**, conservando toda su información e historial.
 
 ### Estado
-**Implementado** el 23/11/2026: migración `RiskEvaluation`, endpoint `POST /counterparties/:id/risk-evaluation`, reactivación con historial, filtro de notificaciones de archivadas y UI con una sola opción de menú (**Contrapartes**), con la opción **Contrapartes archivadas** como pestaña interna. Para Colocadores, el mismo endpoint escribe únicamente en el `.xlsx` local de FR-SG-81; Arriendos mantiene el historial en PostgreSQL.
+**Implementado** el 23/11/2026: migración `RiskEvaluation`, endpoint `POST /counterparties/:id/risk-evaluation`, reactivación con historial, filtro de notificaciones de archivadas y UI con una sola opción de menú (**Contrapartes**), con la opción **Contrapartes archivadas** como pestaña interna. El mismo endpoint escribe solo `Seguimiento Si/No` y `Observaciones` en el `.xlsx` local de FR-SG-81 (Colocadores) o FR-SG-79 (Arriendos), con guardado seguro y validación previa. Arriendos además mantiene el historial en PostgreSQL y revierte esas dos celdas si falla la transacción.
 
 ### Reglas funcionales
 - En la sección **En seguimiento**, cada contraparte debe permitir responder: **¿La contraparte continúa presentando riesgo?** con opciones **Sí** y **No**.
@@ -61,7 +61,7 @@ Permitir que una contraparte en seguimiento se evalúe y, según la decisión, c
 - Debe existir **Reactivar contraparte** desde archivadas: vuelve a En seguimiento, permite establecer nueva fecha de próximo seguimiento y conserva todo el historial.
 - No eliminar registros, no duplicar contrapartes, no perder historial, no modificar subprocesos asignados.
 - Registrar cada decisión y fecha; evitar evaluaciones duplicadas accidentales.
-- En Colocadores, las únicas celdas que se escriben en FR-SG-81 son `Seguimiento Si/No` y `Observaciones`. Fechas, resultado, estado y fecha de archivado se conservan en memoria durante la sesión del backend; PostgreSQL no recibe esos datos.
+- En Colocadores y Arriendos, las únicas celdas que se escriben en FR-SG-81 y FR-SG-79, respectivamente, son `Seguimiento Si/No` y `Observaciones`. Fechas, resultado, estado y fecha de archivado se conservan en memoria durante la sesión del backend; PostgreSQL no recibe esos datos. En Arriendos, la decisión y las fechas sí se registran en `RiskEvaluation` junto con la actualización de la contraparte.
 
 ### Fases
 1. **Datos**: revisar `Counterparty`, `FollowUpStatus` y notificaciones; agregar campos de archivado/reactivación y un modelo de historial de evaluaciones; crear migración.
@@ -90,3 +90,4 @@ Organizar **Contrapartes en seguimiento** en categorías escalables, empezando p
 - Las filas con estado `I` del libro se registran como archivadas y conservan el motivo en observaciones de archivado; el historial de evaluaciones no se altera.
 - El seguimiento de contrapartes es semestral: creaciones, evaluaciones y reactivaciones programan el próximo seguimiento 6 meses después de la fecha de diligencia/evaluación. La actualización anual con vencimiento de 12 meses existe solo para Arriendos en **Actualizaciones**; Colocadores no participa de ese flujo.
 - Colocadores independientes usa el mismo flujo de seguimiento en la UI: botón **Traer de FR-SG-81**, filtro `Seguimiento Si/No = Si` o `No`, categoría `COLOCADORES_INDEPENDIENTES` y seguimiento semestral. Lee el workbook local sin Graph y solo escribe `Seguimiento Si/No` y `Observaciones`; archivar escribe `No` y reactivar escribe `Si`, y ambas acciones reemplazan la observación con lo redactado en la app. No tiene actualización anual: esa pantalla y esa API son exclusivas de Arriendos.
+- Arriendos usa el mismo flujo de evaluación y reactivación sobre FR-SG-79, localiza la fila por documento y escribe únicamente `Seguimiento Si/No` y `Observaciones`; el historial sigue en PostgreSQL. La decisión de no restaurar filas ausentes desde el Excel se conserva: `sync-arriendos` sigue siendo una acción manual independiente.

@@ -116,15 +116,21 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - El cliente React usa un hook con `fetch` streaming y header `Authorization` para SSE; `EventSource` no se usa porque no permite enviar el JWT. El badge muestra conexión, frescura, última actualización y error, y ofrece sincronización manual.
 - Las notificaciones de cambio no traen celdas: cada evento dispara una lectura completa del libro. En modo `graph`, `ExternalSubscriptionService` crea/renueva la suscripción con expiración de dos días, renovación cada hora y ventana de seis horas. En modo `file` la suscripción queda `disabled`; `ExternalPollingService` recarga según `EXTERNAL_FALLBACK_POLL_MS` (60 s por defecto) y también existe sincronización manual.
 - `EXTERNAL_DATA_ENABLED` es `false` por defecto. En modo `graph` se requieren credenciales de solo lectura (`Files.Read.All`, `Sites.Read.All` o `Sites.Selected` según el tenant), URLs/IDs del libro, URL pública base de la API y `clientState` de al menos 16 caracteres. En modo `file` solo se requiere `EXTERNAL_WORKBOOK_PATH` y no se usan credenciales de Microsoft. Graph queda pendiente de consentimiento de administrador.
-- Verificado con 73 pruebas unitarias en 20 archivos, build y lint en backend y frontend. El modo local se validó con `FR-SG-79`: 637 registros, 0 errores de mapeo y estado `connected`/`fresh`. Graph queda pendiente de consentimiento de administrador y de un webhook HTTPS público.
+- Verificado con 86 pruebas unitarias en 22 archivos, build y lint en backend y frontend. El modo local se validó con `FR-SG-79`: 637 registros, 0 errores de mapeo y estado `connected`/`fresh`, además de escrituras seguras sobre copias de `FR-SG-79` y `FR-SG-81`. Graph queda pendiente de consentimiento de administrador y de un webhook HTTPS público.
 
 ### Workbook de seguimiento de Colocadores
 
 - FR-SG-81 se lee desde `EXTERNAL_COLOCADORES_WORKBOOK_PATH` con la hoja `EXTERNAL_COLOCADORES_WORKSHEET_NAME`. Participan las filas con `Seguimiento Si/No = Si` o `No`; no se usa ninguna columna `Estado`.
 - `POST /counterparties/sync-colocadores` solo valida que existan `Numero de documento`, `Seguimiento Si/No` y `Observaciones`, y cuenta las filas. No agrega columnas, IDs, filas ni contrapartes en PostgreSQL. El identificador de la app se deriva del número de documento y no se escribe en el Excel.
 - No se usan `itemId`, `driveId`, credenciales ni permisos de Microsoft Graph para Colocadores: el destino de escritura son solo las celdas existentes `Seguimiento Si/No` y `Observaciones` del `.xlsx` local.
-- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` cambian `Seguimiento Si/No` con ExcelJS —archivar escribe `No`; continuar o reactivar escriben `Si`— y reemplazan `Observaciones` con lo redactado en la app. Fechas, decisión y estado se conservan solo en memoria durante la sesión del backend. La interfaz no confirma la operación si falla la escritura del archivo.
+- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` cambian `Seguimiento Si/No` —archivar escribe `No`; continuar o reactivar escriben `Si`— y reemplazan `Observaciones` con lo redactado en la app. `saveWorkbookSafely()` parchea solo esas dos celdas en el XML de la hoja, compara el archivo resultante y lo reemplaza de forma atómica; si el libro está abierto o aparece cualquier otro cambio, responde 503 y deja el original intacto. Fechas, decisión y estado se conservan solo en memoria durante la sesión del backend. La interfaz no confirma la operación si falla la escritura del archivo.
 - Los estados mostrados son `Al día`, `Revisada`, `Vencida` y `Archivada`. El próximo seguimiento se calcula a 6 meses desde la evaluación o reactivación.
+
+### Workbook de seguimiento de Arriendos
+
+- FR-SG-79 se usa para la actualización anual y, además, como destino de escritura del seguimiento de Arriendos. El archivo local se configura con `EXTERNAL_WORKBOOK_PATH` y la hoja con `EXTERNAL_DATA_WORKSHEET_NAME` (por defecto `FR-SG-79`).
+- `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` localizan la fila por `Numero de documento Natural / Juridica`, escriben solo `Seguimiento Si/No` y `Observaciones`, y usan el mismo guardado seguro que Colocadores. No se restauran ni sincronizan filas ausentes desde el Excel hacia PostgreSQL sin una solicitud explícita.
+- PostgreSQL continúa siendo la fuente del historial de Arriendos (`RiskEvaluation`) y de la sincronización manual `POST /counterparties/sync-arriendos`. Si la transacción de base de datos falla después de escribir el Excel, el servicio intenta restaurar las dos celdas previas.
 
 ### Dashboard (Fase 8)
 
@@ -200,7 +206,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - **Frontend**: SPA React + Vite + TypeScript + Tailwind CSS + Lucide + React Router + Axios + React Hook Form + Zod. Consume la API REST y no contiene reglas de negocio.
 - **Backend**: NestJS + TypeScript estricto, API REST bajo el prefijo `/api`, validación con DTOs (`class-validator`/`class-transformer`), Prisma ORM y PostgreSQL como única base de datos.
 - **Archivos**: Multer guarda los documentos en `uploads/` con nombre UUID. No se sirven como estáticos: se descargan por un endpoint autenticado.
-- **Datos externos**: la fuente anual de Arriendos se lee de un único libro, con Microsoft Graph o desde un `.xlsx` local; el snapshot vive solo en memoria y se publica por SSE autenticado. El webhook (solo Graph) y el polling solo disparan recargas; ese flujo nunca escribe en el libro ni transfiere datos hacia o desde PostgreSQL. El seguimiento de Colocadores usa FR-SG-81 como fuente de lectura y destino de escritura en el `.xlsx` local; no usa Graph ni escribe observaciones, estados ni fechas en PostgreSQL.
+- **Datos externos**: la fuente anual de Arriendos se lee de un único libro, con Microsoft Graph o desde un `.xlsx` local; el snapshot vive solo en memoria y se publica por SSE autenticado. El webhook (solo Graph) y el polling solo disparan recargas; ese flujo de actualización anual nunca escribe en el libro ni transfiere datos hacia o desde PostgreSQL. Los seguimientos de Colocadores y Arriendos usan FR-SG-81 y FR-SG-79 como fuente de lectura y destino de escritura en archivos locales; no usan Graph para escribir ni transfieren observaciones, estados o fechas a PostgreSQL. Arriendos sí conserva en PostgreSQL su historial de evaluaciones y reactivaciones.
 - **Autenticación**: JWT de acceso (8 h por defecto) + bcrypt para contraseñas. Un guard valida el token y consulta el usuario para verificar que siga activo.
 - **Notificaciones**: tabla global + tabla de lecturas por usuario. Tarea diaria con `@nestjs/schedule`.
 - **Fechas**: se almacenan como `date` (sin hora) y se calculan con la zona `America/Bogota`.
@@ -220,7 +226,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 | `annual-notifications` | Generación diaria, listado y lectura por usuario de recordatorios anuales |
 | `imports` | Carga de Excel, mapeo de columnas, vista previa y confirmación transaccional |
 | `annual-updates` | Base anual independiente: importación por código, conteos, consulta y vencimientos |
-| `external-data` | Lectura de libro único vía Graph o archivo local, caché en memoria, webhook, polling, REST y SSE para la pantalla anual; lectura y escritura local de FR-SG-81 para Colocadores |
+| `external-data` | Lectura de libro único vía Graph o archivo local, caché en memoria, webhook, polling, REST y SSE para la pantalla anual; lectura y escritura local segura de FR-SG-81 para Colocadores y de FR-SG-79 para Arriendos |
 | `dashboard` | Indicadores del calendario y listado paginado de contrapartes por atender |
 | `audit` | Registro y consulta del historial de acciones |
 | `prisma` | Cliente Prisma y ciclo de vida de la conexión |

@@ -2,11 +2,14 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { CounterpartyStatus, Prisma, RiskDecision } from '@prisma/client'
 import { AuditService } from '../audit/audit.service.js'
 import { DEFAULT_CATEGORY_KEY } from '../categories/category.constants.js'
+import { ArriendosWorkbookService } from '../external-data/arriendos-workbook.service.js'
+import type { WorkbookFieldsSnapshot } from '../external-data/colocadores-workbook.writer.service.js'
 import {
   calculateCalendarStatus,
 } from '../common/utils/calendar-status.js'
@@ -112,9 +115,12 @@ function serializeDetail(row: DetailRow) {
 
 @Injectable()
 export class CounterpartiesService {
+  private readonly logger = new Logger(CounterpartiesService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly arriendosWorkbook: ArriendosWorkbookService,
   ) {}
 
   async findAll(query: ListCounterpartiesQueryDto) {
@@ -333,6 +339,7 @@ export class CounterpartiesService {
         nit: true,
         businessName: true,
         status: true,
+        category: { select: { key: true } },
       },
     })
 
@@ -378,38 +385,56 @@ export class CounterpartiesService {
         ? addMonths(evaluatedAt, 6)
         : null
 
-    await this.prisma.counterparty.update({
-      where: { id },
-      data:
-        dto.decision === RiskDecision.CONTINUE
-          ? {
-              status: CounterpartyStatus.ACTIVE,
-              lastFollowUpDate: evaluatedAt,
-              nextFollowUpDate,
-            }
-          : {
-              status: CounterpartyStatus.ARCHIVED,
-              lastFollowUpDate: evaluatedAt,
-              archivedAt: new Date(),
-              archivedById: actorId,
-              archiveReason:
-                notes ?? 'La contraparte ya no presenta riesgo',
-              reactivatedAt: null,
-              reactivatedById: null,
-              reactivationReason: null,
-            },
-    })
+    const arriendosSnapshot =
+      current.category?.key === DEFAULT_CATEGORY_KEY
+        ? await this.arriendosWorkbook.writeFollowUp(
+            current.nit,
+            dto.decision === RiskDecision.CONTINUE ? 'Si' : 'No',
+            notes ?? '',
+          )
+        : null
 
-    await this.prisma.riskEvaluation.create({
-      data: {
-        counterpartyId: id,
-        decision: dto.decision,
-        evaluatedAt,
-        nextFollowUpDate,
-        notes,
-        createdById: actorId,
-      },
-    })
+    try {
+      await this.prisma.$transaction([
+        this.prisma.counterparty.update({
+          where: { id },
+          data:
+            dto.decision === RiskDecision.CONTINUE
+              ? {
+                  status: CounterpartyStatus.ACTIVE,
+                  lastFollowUpDate: evaluatedAt,
+                  nextFollowUpDate,
+                }
+              : {
+                  status: CounterpartyStatus.ARCHIVED,
+                  lastFollowUpDate: evaluatedAt,
+                  archivedAt: new Date(),
+                  archivedById: actorId,
+                  archiveReason:
+                    notes ?? 'La contraparte ya no presenta riesgo',
+                  reactivatedAt: null,
+                  reactivatedById: null,
+                  reactivationReason: null,
+                },
+        }),
+        this.prisma.riskEvaluation.create({
+          data: {
+            counterpartyId: id,
+            decision: dto.decision,
+            evaluatedAt,
+            nextFollowUpDate,
+            notes,
+            createdById: actorId,
+          },
+        }),
+      ])
+    } catch (error) {
+      await this.restoreArriendosWorkbook(
+        current.nit,
+        arriendosSnapshot,
+      )
+      throw error
+    }
 
     await this.audit.record({
       userId: actorId,
@@ -495,6 +520,7 @@ export class CounterpartiesService {
         nit: true,
         businessName: true,
         status: true,
+        category: { select: { key: true } },
       },
     })
 
@@ -511,27 +537,45 @@ export class CounterpartiesService {
       ? parseDateOnly(dto.nextFollowUpDate)
       : addMonths(evaluatedAt, 6)
 
-    await this.prisma.counterparty.update({
-      where: { id },
-      data: {
-        status: CounterpartyStatus.ACTIVE,
-        reactivatedAt: new Date(),
-        reactivatedById: actorId,
-        reactivationReason: dto.reason,
-        ...(nextFollowUpDate ? { nextFollowUpDate } : {}),
-      },
-    })
+    const arriendosSnapshot =
+      current.category?.key === DEFAULT_CATEGORY_KEY
+        ? await this.arriendosWorkbook.writeFollowUp(
+            current.nit,
+            'Si',
+            dto.reason,
+          )
+        : null
 
-    await this.prisma.riskEvaluation.create({
-      data: {
-        counterpartyId: id,
-        decision: RiskDecision.REACTIVATE,
-        evaluatedAt,
-        nextFollowUpDate,
-        notes: dto.reason,
-        createdById: actorId,
-      },
-    })
+    try {
+      await this.prisma.$transaction([
+        this.prisma.counterparty.update({
+          where: { id },
+          data: {
+            status: CounterpartyStatus.ACTIVE,
+            reactivatedAt: new Date(),
+            reactivatedById: actorId,
+            reactivationReason: dto.reason,
+            ...(nextFollowUpDate ? { nextFollowUpDate } : {}),
+          },
+        }),
+        this.prisma.riskEvaluation.create({
+          data: {
+            counterpartyId: id,
+            decision: RiskDecision.REACTIVATE,
+            evaluatedAt,
+            nextFollowUpDate,
+            notes: dto.reason,
+            createdById: actorId,
+          },
+        }),
+      ])
+    } catch (error) {
+      await this.restoreArriendosWorkbook(
+        current.nit,
+        arriendosSnapshot,
+      )
+      throw error
+    }
 
     await this.audit.record({
       userId: actorId,
@@ -548,6 +592,28 @@ export class CounterpartiesService {
     })
 
     return this.findOne(id)
+  }
+
+  private async restoreArriendosWorkbook(
+    nit: string,
+    snapshot: WorkbookFieldsSnapshot | null,
+  ): Promise<void> {
+    if (!snapshot) {
+      return
+    }
+
+    try {
+      await this.arriendosWorkbook.writeFollowUp(
+        nit,
+        snapshot.followUp,
+        snapshot.observations,
+      )
+    } catch (error) {
+      this.logger.error(
+        'No fue posible restaurar las celdas de FR-SG-79 después de un error de base de datos',
+        error instanceof Error ? error.stack : undefined,
+      )
+    }
   }
 
   private buildWhere(

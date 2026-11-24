@@ -3,8 +3,19 @@ import { CounterpartyStatus, RiskDecision } from '@prisma/client'
 
 export const FIELD_ALIASES = {
   id: ['id unico', 'id único', 'identificador', 'identificador unico'],
-  document: ['numero de documento', 'número de documento'],
-  name: ['nombres y apellidos', 'nombre y apellidos', 'nombre'],
+  document: [
+    'numero de documento',
+    'número de documento',
+    'numero de documento natural juridica',
+    'número de documento natural jurídica',
+  ],
+  name: [
+    'nombres y apellidos',
+    'nombre y apellidos',
+    'nombre',
+    'nombre natural juridica',
+    'nombre natural jurídica',
+  ],
   registrationDate: ['fecha debida diligencia', 'fecha de diligenciamiento'],
   followUp: ['seguimiento si no', 'seguimiento'],
   observations: ['observaciones'],
@@ -52,6 +63,59 @@ export function normalizeHeader(value: unknown): string {
 
 export function normalizeCell(value: unknown): string {
   return asText(value).trim()
+}
+
+export function cellText(cell: { value: unknown }): string {
+  const value = cell.value
+
+  if (value && typeof value === 'object' && 'result' in value) {
+    return normalizeCell(valueToText(value.result))
+  }
+
+  return normalizeCell(valueToText(value))
+}
+
+function valueToText(value: unknown): string {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        item && typeof item === 'object' && 'text' in item
+          ? valueToText(item.text)
+          : valueToText(item),
+      )
+      .join('')
+  }
+
+  if (value && typeof value === 'object') {
+    const richText = value as {
+      richText?: { text?: unknown }[]
+      text?: unknown
+    }
+
+    if (Array.isArray(richText.richText)) {
+      return richText.richText
+        .map((item) => valueToText(item.text))
+        .join('')
+    }
+
+    if ('text' in richText) {
+      return valueToText(richText.text)
+    }
+  }
+
+  return ''
 }
 
 export function normalizeDate(value: unknown): string | null {

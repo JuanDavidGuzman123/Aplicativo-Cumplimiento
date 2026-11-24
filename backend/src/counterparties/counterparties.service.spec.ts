@@ -12,10 +12,12 @@ import {
   getBusinessToday,
   toDateOnly,
 } from '../common/utils/dates.js'
+import type { ArriendosWorkbookService } from '../external-data/arriendos-workbook.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { CounterpartiesService } from './counterparties.service.js'
 
 type PrismaMock = {
+  $transaction: ReturnType<typeof vi.fn>
   counterparty: {
     findUnique: ReturnType<typeof vi.fn>
     update: ReturnType<typeof vi.fn>
@@ -60,12 +62,14 @@ function detailRow(overrides: Record<string, unknown> = {}) {
 describe('CounterpartiesService.evaluateRisk', () => {
   let prisma: PrismaMock
   let audit: { record: ReturnType<typeof vi.fn> }
+  let arriendos: { writeFollowUp: ReturnType<typeof vi.fn> }
   let service: CounterpartiesService
   const today = getBusinessToday()
   const evaluatedAt = toDateOnly(today) ?? ''
 
   beforeEach(() => {
     prisma = {
+      $transaction: vi.fn((calls: Promise<unknown>[]) => Promise.all(calls)),
       counterparty: {
         findUnique: vi.fn(),
         update: vi.fn(),
@@ -76,9 +80,11 @@ describe('CounterpartiesService.evaluateRisk', () => {
       },
     }
     audit = { record: vi.fn() }
+    arriendos = { writeFollowUp: vi.fn() }
     service = new CounterpartiesService(
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
+      arriendos as unknown as ArriendosWorkbookService,
     )
   })
 
@@ -124,6 +130,81 @@ describe('CounterpartiesService.evaluateRisk', () => {
       },
     })
     expect(result.status).toBe(CounterpartyStatus.ACTIVE)
+    expect(arriendos.writeFollowUp).not.toHaveBeenCalled()
+  })
+
+  it('escribe Si en FR-SG-79 al continuar una contraparte de Arriendos', async () => {
+    prisma.counterparty.findUnique
+      .mockResolvedValueOnce(
+        detailRow({ category: { key: 'ARRIENDOS' } }),
+      )
+      .mockResolvedValueOnce(
+        detailRow({ category: { key: 'ARRIENDOS' } }),
+      )
+    prisma.riskEvaluation.findFirst.mockResolvedValue(null)
+    arriendos.writeFollowUp.mockResolvedValue({
+      followUp: 'Si',
+      observations: '',
+    })
+
+    await service.evaluateRisk(
+      'counterparty-1',
+      {
+        decision: RiskDecision.CONTINUE,
+        evaluatedAt,
+        notes: 'Seguimiento semestral',
+      },
+      'user-1',
+    )
+
+    expect(arriendos.writeFollowUp).toHaveBeenCalledWith(
+      '9001234567',
+      'Si',
+      'Seguimiento semestral',
+    )
+    expect(prisma.$transaction).toHaveBeenCalled()
+  })
+
+  it('restaura FR-SG-79 si falla la transacción de base de datos', async () => {
+    prisma.counterparty.findUnique.mockResolvedValueOnce(
+      detailRow({ category: { key: 'ARRIENDOS' } }),
+    )
+    prisma.riskEvaluation.findFirst.mockResolvedValue(null)
+    prisma.$transaction.mockRejectedValueOnce(new Error('fallo db'))
+    arriendos.writeFollowUp
+      .mockResolvedValueOnce({
+        followUp: 'No',
+        observations: 'Observación anterior',
+      })
+      .mockResolvedValueOnce({
+        followUp: 'No',
+        observations: 'Observación anterior',
+      })
+
+    await expect(
+      service.evaluateRisk(
+        'counterparty-1',
+        {
+          decision: RiskDecision.CONTINUE,
+          evaluatedAt,
+          notes: 'Nueva observación',
+        },
+        'user-1',
+      ),
+    ).rejects.toThrow('fallo db')
+
+    expect(arriendos.writeFollowUp).toHaveBeenNthCalledWith(
+      1,
+      '9001234567',
+      'Si',
+      'Nueva observación',
+    )
+    expect(arriendos.writeFollowUp).toHaveBeenNthCalledWith(
+      2,
+      '9001234567',
+      'No',
+      'Observación anterior',
+    )
   })
 
   it('archives the counterparty when the risk decision is negative', async () => {
@@ -183,6 +264,39 @@ describe('CounterpartiesService.evaluateRisk', () => {
 
     expect(prisma.counterparty.update).not.toHaveBeenCalled()
   })
+
+  it('escribe Si en FR-SG-79 al reactivar una contraparte de Arriendos', async () => {
+    prisma.counterparty.findUnique
+      .mockResolvedValueOnce(
+        detailRow({
+          status: CounterpartyStatus.ARCHIVED,
+          category: { key: 'ARRIENDOS' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        detailRow({
+          status: CounterpartyStatus.ACTIVE,
+          category: { key: 'ARRIENDOS' },
+        }),
+      )
+    arriendos.writeFollowUp.mockResolvedValue({
+      followUp: 'No',
+      observations: 'Archivada',
+    })
+
+    await service.reactivate(
+      'counterparty-1',
+      { reason: 'Se reactiva' },
+      'user-1',
+    )
+
+    expect(arriendos.writeFollowUp).toHaveBeenCalledWith(
+      '9001234567',
+      'Si',
+      'Se reactiva',
+    )
+    expect(prisma.$transaction).toHaveBeenCalled()
+  })
 })
 
 describe('CounterpartiesService.findAll', () => {
@@ -207,6 +321,7 @@ describe('CounterpartiesService.findAll', () => {
     const service = new CounterpartiesService(
       prisma as unknown as PrismaService,
       { record: vi.fn() } as unknown as AuditService,
+      { writeFollowUp: vi.fn() } as unknown as ArriendosWorkbookService,
     )
 
     await service.findAll({
