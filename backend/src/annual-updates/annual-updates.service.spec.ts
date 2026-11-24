@@ -1,8 +1,5 @@
 import ExcelJS from 'exceljs'
-import {
-  AnnualNotificationType,
-  AnnualStatus,
-} from '@prisma/client'
+import { AnnualStatus } from '@prisma/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ANNUAL_DAY_IN_MS,
@@ -428,8 +425,14 @@ describe('AnnualUpdatesService', () => {
 
     expect(upsert).toHaveBeenCalledTimes(1)
     expect(upsert).toHaveBeenCalledWith({
-      where: { codeNormalized: 'PDV-001' },
+      where: {
+        source_codeNormalized: {
+          source: 'arriendos',
+          codeNormalized: 'PDV-001',
+        },
+      },
       create: expect.objectContaining({
+        source: 'arriendos',
         code: 'PDV-001',
         codeNormalized: 'PDV-001',
         businessName: 'Alfa SAS',
@@ -502,6 +505,10 @@ describe('AnnualUpdatesService', () => {
         where: {
           AND: [
             {
+              source: 'arriendos',
+            },
+            {
+              source: 'arriendos',
               status: AnnualStatus.ACTIVE,
               OR: [
                 { filingYear: { lt: currentYear } },
@@ -572,6 +579,7 @@ describe('AnnualUpdatesService', () => {
     expect(prisma.annualCounterparty.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
+          source: 'arriendos',
           status: AnnualStatus.ACTIVE,
           filingDate: {
             gte: minimumAnnualFilingDate(currentYear),
@@ -587,7 +595,6 @@ describe('AnnualUpdatesService', () => {
     expect(result.data[1]).toMatchObject({
       daysUntilDue: 3,
       situation: 'DUE_SOON',
-      reminderType: AnnualNotificationType.ANNUAL_D3,
     })
     expect(result.summary).toEqual({
       needsUpdate: 1,

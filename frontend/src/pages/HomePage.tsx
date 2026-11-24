@@ -30,6 +30,13 @@ export function HomePage() {
       icon: CalendarCheck,
     },
     {
+      to: '/actualizacion-anual/clientes',
+      title: 'Actualizacion Anual Clientes',
+      description:
+        'Consulte las actualizaciones anuales de clientes corporativos y sus vencimientos desde FR-SG-80.',
+      icon: CalendarCheck,
+    },
+    {
       to: '/contrapartes',
       title: 'Contrapartes en seguimiento',
       description:
@@ -82,8 +89,9 @@ export function HomePage() {
           Accesos rápidos
         </h2>
         <p className="mt-2 text-sm text-slate-600">
-          Seleccione un módulo para continuar. Las alertas de vencimiento
-          están disponibles en la campana superior.
+          Seleccione un módulo para continuar. Las alertas de actualización
+          anual y de seguimiento están separadas en dos campanas del
+          encabezado.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

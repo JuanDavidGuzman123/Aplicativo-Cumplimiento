@@ -1,12 +1,23 @@
-import { Type } from 'class-transformer'
+import { Transform, Type } from 'class-transformer'
 import {
+  IsIn,
   IsInt,
   IsOptional,
   Max,
   Min,
 } from 'class-validator'
+import { ANNUAL_SOURCES } from '../annual-sources.js'
 
 export class ListAnnualUpdatesDueQueryDto {
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsIn([...ANNUAL_SOURCES], {
+    message: 'El origen de la actualización anual no es válido',
+  })
+  source?: string
+
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'La página debe ser un número entero' })

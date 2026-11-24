@@ -14,6 +14,11 @@ import {
   getBusinessToday,
   toDateOnly,
 } from '../common/utils/dates.js'
+import {
+  ANNUAL_SOURCES,
+  DEFAULT_ANNUAL_SOURCE,
+  type AnnualSource,
+} from '../annual-updates/annual-sources.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 
 type AnnualNotificationRow = {
@@ -24,6 +29,7 @@ type AnnualNotificationRow = {
   createdAt: Date
   annualCounterparty: {
     id: string
+    source: string
     code: string
     businessName: string
   }
@@ -39,6 +45,7 @@ const annualNotificationBaseSelect = {
   annualCounterparty: {
     select: {
       id: true,
+      source: true,
       code: true,
       businessName: true,
     },
@@ -66,7 +73,12 @@ function serialize(row: AnnualNotificationRow) {
     createdAt: row.createdAt,
     source: 'ANNUAL' as const,
     counterparty: null,
-    annualCounterparty: row.annualCounterparty,
+    annualCounterparty: {
+      source: row.annualCounterparty.source as AnnualSource,
+      id: row.annualCounterparty.id,
+      code: row.annualCounterparty.code,
+      businessName: row.annualCounterparty.businessName,
+    },
     read: Boolean(read),
     readAt: read?.readAt ?? null,
   }
@@ -138,13 +150,20 @@ export class AnnualNotificationsService {
       createdAt: notification.createdAt,
       source: 'ANNUAL' as const,
       counterparty: null,
-      annualCounterparty: notification.annualCounterparty,
+      annualCounterparty: {
+        source: notification.annualCounterparty.source as AnnualSource,
+        id: notification.annualCounterparty.id,
+        code: notification.annualCounterparty.code,
+        businessName: notification.annualCounterparty.businessName,
+      },
       read: true,
       readAt: read.readAt,
     }
   }
 
-  async generateDaily() {
+  async generateDaily(
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
+  ) {
     const today = getBusinessToday()
     const minimumFilingDate = minimumAnnualFilingDate(
       today.getUTCFullYear(),
@@ -152,6 +171,7 @@ export class AnnualNotificationsService {
     const counterparties =
       await this.prisma.annualCounterparty.findMany({
         where: {
+          source,
           status: AnnualStatus.ACTIVE,
           filingDate: { gte: minimumFilingDate },
         },
@@ -214,5 +234,21 @@ export class AnnualNotificationsService {
       evaluated: counterparties.length,
       created: result.count,
     }
+  }
+
+  async generateAllDaily(): Promise<{
+    evaluated: number
+    created: number
+  }> {
+    let evaluated = 0
+    let created = 0
+
+    for (const source of ANNUAL_SOURCES) {
+      const result = await this.generateDaily(source)
+      evaluated += result.evaluated
+      created += result.created
+    }
+
+    return { evaluated, created }
   }
 }

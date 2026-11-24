@@ -18,6 +18,9 @@ import { uuidFromDocument } from '../external-data/colocadores-workbook.util.js'
 import {
   COLOCADORES_CATEGORY_KEY,
 } from '../external-data/colocadores-workbook.service.js'
+import {
+  CLIENTES_CATEGORY_KEY,
+} from '../external-data/clientes-workbook.service.js'
 import { ExternalDataService } from '../external-data/external-data.service.js'
 import type { ExternalAnnualRow } from '../external-data/types.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -45,6 +48,7 @@ type SyncOptions = {
   sourceRows: number
   followUpRows: number
   preserveWorkbookIds?: boolean
+  workbookIdPrefix?: string
 }
 
 const DEFAULT_SUBPROCESS_NAME = 'Debida diligencia'
@@ -123,6 +127,43 @@ export class CounterpartySyncService {
     })
   }
 
+  async syncClientes(
+    actorId: string,
+  ): Promise<CounterpartySyncResult> {
+    const status = await this.externalData.refresh(
+      'sincronización de contrapartes de Clientes',
+      'clientes',
+    )
+
+    if (status.rowCount === 0) {
+      throw new ServiceUnavailableException(
+        'El libro FR-SG-80 no está disponible en este momento',
+      )
+    }
+
+    const rows = (await this.externalData.getClientesFollowUpRows())
+      .filter((row) => row.requiresSemiannualFollowUp !== null)
+      .map((row): ExternalAnnualRow => ({
+        ...row,
+        status:
+          row.requiresSemiannualFollowUp === true
+            ? 'ACTIVE'
+            : 'INACTIVE',
+      }))
+    const followUpRows = rows.length
+
+    return this.syncRows(actorId, {
+      action: 'SYNC_CLIENTES_COUNTERPARTIES',
+      categoryKey: CLIENTES_CATEGORY_KEY,
+      rows,
+      sourceName: 'FR-SG-80',
+      sourceRows: status.rowCount,
+      followUpRows,
+      preserveWorkbookIds: true,
+      workbookIdPrefix: 'clientes-fr-sg-80',
+    })
+  }
+
   private async syncRows(
     actorId: string,
     options: SyncOptions,
@@ -141,6 +182,7 @@ export class CounterpartySyncService {
         row,
         options.sourceName,
         options.preserveWorkbookIds,
+        options.workbookIdPrefix,
       )
 
       if (!candidate) {
@@ -200,6 +242,7 @@ export class CounterpartySyncService {
     row: SyncSourceRow,
     sourceName: string,
     preserveWorkbookIds = false,
+    workbookIdPrefix?: string,
   ): Omit<
     Prisma.CounterpartyCreateManyInput,
     'categoryId' | 'subprocessId'
@@ -216,7 +259,14 @@ export class CounterpartySyncService {
       : getBusinessToday()
 
     return {
-      ...(preserveWorkbookIds ? { id: uuidFromDocument(nit) } : {}),
+      ...(preserveWorkbookIds
+        ? {
+            id: uuidFromDocument(
+              nit,
+              workbookIdPrefix ?? 'colocadores-fr-sg-81',
+            ),
+          }
+        : {}),
       nit,
       nitNormalized,
       businessName: row.businessName.trim(),

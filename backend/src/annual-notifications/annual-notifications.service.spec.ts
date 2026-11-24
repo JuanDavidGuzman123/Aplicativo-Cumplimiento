@@ -135,6 +135,7 @@ describe('AnnualNotificationsService', () => {
     expect(prisma.annualCounterparty.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
+          source: 'arriendos',
           status: AnnualStatus.ACTIVE,
           filingDate: {
             gte: minimumAnnualFilingDate(today.getUTCFullYear()),

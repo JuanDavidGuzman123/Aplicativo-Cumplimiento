@@ -1,4 +1,4 @@
-export type ExternalSource = 'arriendos'
+export type ExternalSource = 'arriendos' | 'clientes'
 
 export type ExternalAnnualStatus = 'ACTIVE' | 'INACTIVE'
 
@@ -13,13 +13,6 @@ export type ExternalUpdateSituation =
   | 'DUE_TODAY'
   | 'DUE_SOON'
   | 'NOT_DUE'
-
-export type ExternalReminderType =
-  | 'ANNUAL_D15'
-  | 'ANNUAL_D10'
-  | 'ANNUAL_D5'
-  | 'ANNUAL_D3'
-  | 'ANNUAL_D1'
 
 export type ExternalReportMetric =
   | 'active'
@@ -50,7 +43,6 @@ export type ExternalUpdateDueRow = ExternalAnnualRow & {
   dueDate: string | null
   daysUntilDue: number | null
   situation: ExternalUpdateSituation
-  reminderType: ExternalReminderType | null
 }
 
 export type ExternalSummary = {

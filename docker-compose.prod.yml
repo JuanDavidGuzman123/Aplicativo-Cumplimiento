@@ -46,6 +46,9 @@ services:
       TRUST_PROXY: ${TRUST_PROXY:-1}
     volumes:
       - uploads_data:/app/uploads
+      - ${EXTERNAL_ARRIENDOS_WORKBOOK_DIR:-./workbooks/arriendos}:/app/workbooks/arriendos
+      - ${EXTERNAL_COLOCADORES_WORKBOOK_DIR:-./workbooks/colocadores}:/app/workbooks/colocadores
+      - ${EXTERNAL_CLIENTES_WORKBOOK_DIR:-./workbooks/clientes}:/app/workbooks/clientes
     depends_on:
       db:
         condition: service_healthy

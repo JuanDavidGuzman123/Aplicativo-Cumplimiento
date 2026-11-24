@@ -25,6 +25,14 @@ export async function syncColocadoresFromExternal(): Promise<CounterpartySyncRes
   return data
 }
 
+export async function syncClientesFromExternal(): Promise<CounterpartySyncResult> {
+  const { data } = await api.post<CounterpartySyncResult>(
+    '/counterparties/sync-clientes',
+  )
+
+  return data
+}
+
 export async function getCategories(): Promise<CategorySummary[]> {
   const { data } = await api.get<CategorySummary[]>('/categories')
   return data

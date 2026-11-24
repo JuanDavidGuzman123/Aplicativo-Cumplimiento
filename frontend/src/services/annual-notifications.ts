@@ -1,7 +1,7 @@
 import { api } from './api'
 import type {
+  AnnualNotification,
   AnnualNotificationsResponse,
-  AppNotification,
 } from '../types/notification'
 
 export async function getAnnualNotifications(): Promise<AnnualNotificationsResponse> {
@@ -13,8 +13,8 @@ export async function getAnnualNotifications(): Promise<AnnualNotificationsRespo
 
 export async function markAnnualNotificationRead(
   id: string,
-): Promise<AppNotification> {
-  const { data } = await api.patch<AppNotification>(
+): Promise<AnnualNotification> {
+  const { data } = await api.patch<AnnualNotification>(
     `/annual-notifications/${id}/read`,
   )
   return data

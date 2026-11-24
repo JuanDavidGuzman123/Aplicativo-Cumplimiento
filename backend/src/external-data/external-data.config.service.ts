@@ -79,9 +79,36 @@ export class ExternalDataConfigService {
     return this.enabled && Boolean(this.colocadoresWorkbookPath)
   }
 
+  get clientesWorkbookPath(): string {
+    return (
+      this.config.get<string>('EXTERNAL_CLIENTES_WORKBOOK_PATH')?.trim() ??
+      ''
+    )
+  }
+
+  get clientesWorksheetName(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_CLIENTES_WORKSHEET_NAME')
+        ?.trim() || 'FR-SG-80'
+    )
+  }
+
+  get clientesReadConfigured(): boolean {
+    return this.enabled && Boolean(this.clientesWorkbookPath)
+  }
+
   get rawColumnMap(): string {
     return (
       this.config.get<string>('EXTERNAL_DATA_COLUMN_MAP')?.trim() ?? ''
+    )
+  }
+
+  get rawClientesColumnMap(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_CLIENTES_COLUMN_MAP')
+        ?.trim() ?? ''
     )
   }
 

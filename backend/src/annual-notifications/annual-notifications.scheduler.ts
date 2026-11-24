@@ -25,7 +25,7 @@ export class AnnualNotificationsScheduler
 
   onModuleInit() {
     const configured =
-      this.config.get<string>('SCHEDULE_NOTIFICATIONS_CRON') ??
+      this.config.get<string>('SCHEDULE_ANNUAL_NOTIFICATIONS_CRON') ??
       '0 7 * * *'
     let expression = configured
 
@@ -42,7 +42,7 @@ export class AnnualNotificationsScheduler
       expression,
       () => {
         void this.annualNotificationsService
-          .generateDaily()
+          .generateAllDaily()
           .catch((error: unknown) => {
             this.logger.error(
               'No fue posible generar las notificaciones anuales diarias',
@@ -65,7 +65,7 @@ export class AnnualNotificationsScheduler
   async onApplicationBootstrap() {
     try {
       const result =
-        await this.annualNotificationsService.generateDaily()
+        await this.annualNotificationsService.generateAllDaily()
 
       if (result.created > 0) {
         this.logger.log(

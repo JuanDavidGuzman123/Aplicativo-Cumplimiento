@@ -30,6 +30,7 @@ import {
   getCategories,
   getCounterparties,
   syncArriendosFromExternal,
+  syncClientesFromExternal,
   syncColocadoresFromExternal,
   getCounterparty,
   reactivateCounterparty,
@@ -140,6 +141,7 @@ export function CounterpartiesPage() {
   const [categoriesError, setCategoriesError] = useState('')
   const [syncingArriendos, setSyncingArriendos] = useState(false)
   const [syncingColocadores, setSyncingColocadores] = useState(false)
+  const [syncingClientes, setSyncingClientes] = useState(false)
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<
     string | null
   >(null)
@@ -462,6 +464,32 @@ export function CounterpartiesPage() {
     }
   }
 
+  const syncClientes = async () => {
+    if (syncingClientes) {
+      return
+    }
+
+    setSyncingClientes(true)
+    setCategoriesError('')
+
+    try {
+      const result = await syncClientesFromExternal()
+      setSuccess(
+        `Sincronización completada: ${result.created} nuevas contrapartes de Clientes, ${result.alreadyExisting} ya existían.`,
+      )
+      refresh()
+    } catch (syncError) {
+      setCategoriesError(
+        getApiErrorMessage(
+          syncError,
+          'No fue posible sincronizar las contrapartes desde FR-SG-80',
+        ),
+      )
+    } finally {
+      setSyncingClientes(false)
+    }
+  }
+
   const closeModal = () => {
     setModal(null)
     setDetail(null)
@@ -733,6 +761,21 @@ export function CounterpartiesPage() {
                   <RefreshCw className="size-4" />
                 )}
                 Traer de FR-SG-81
+              </button>
+            )}
+            {selectedCategoryKey === 'CLIENTES' && (
+              <button
+                type="button"
+                onClick={syncClientes}
+                disabled={syncingClientes}
+                className={secondaryButtonClass}
+              >
+                {syncingClientes ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Traer de FR-SG-80
               </button>
             )}
             <p className="text-sm text-slate-500">

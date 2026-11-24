@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { roleLabels } from '../utils/labels'
+import { AnnualNotificationBell } from '../components/AnnualNotificationBell'
 import { NotificationBell } from '../components/NotificationBell'
 
 type NavItem = {
@@ -32,6 +33,11 @@ export function AppLayout() {
     {
       to: '/actualizacion-anual',
       label: 'Actualizacion Anual Arriendos',
+      icon: CalendarCheck,
+    },
+    {
+      to: '/actualizacion-anual/clientes',
+      label: 'Actualizacion Anual Clientes',
       icon: CalendarCheck,
     },
     {
@@ -131,6 +137,7 @@ export function AppLayout() {
 
           <div className="ml-auto flex items-center gap-4">
             <NotificationBell />
+            <AnnualNotificationBell />
             <div className="text-right">
               <p className="text-sm font-medium text-slate-900">{user?.name}</p>
               <p className="text-xs text-slate-500">

@@ -132,8 +132,9 @@ model Counterparty {
 
 model AnnualCounterparty {
   id                         String       @id @default(uuid())
+  source                     String       @default("arriendos")
   code                       String
-  codeNormalized             String       @unique
+  codeNormalized             String
   businessName               String
   status                     AnnualStatus @default(ACTIVE)
   requiresSemiannualFollowUp Boolean?
@@ -147,7 +148,9 @@ model AnnualCounterparty {
 
   notifications AnnualNotification[]
 
+  @@unique([source, codeNormalized])
   @@index([status])
+  @@index([source])
   @@index([filingDate])
   @@index([filingYear])
   @@index([businessName])

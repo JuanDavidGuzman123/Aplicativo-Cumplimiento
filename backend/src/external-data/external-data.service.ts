@@ -23,7 +23,6 @@ import type {
   ExternalListQuery,
   ExternalMeta,
   ExternalPendingActiveReport,
-  ExternalReminderType,
   ExternalReport,
   ExternalReportMetric,
   ExternalSource,
@@ -107,6 +106,15 @@ export class ExternalDataService implements OnModuleInit {
       },
       'colocadores',
     )
+    this.cache.initialize(
+      {
+        enabled: this.config.enabled,
+        configured: this.config.clientesReadConfigured,
+        webhookConfigured: false,
+        pollMs: this.config.pollMs,
+      },
+      'clientes',
+    )
 
     if (this.config.enabled && this.config.readConfigured) {
       void this.refresh('inicio', 'arriendos').catch(
@@ -123,6 +131,16 @@ export class ExternalDataService implements OnModuleInit {
         (error: unknown) => {
           this.logger.warn(
             `No se pudo cargar el libro de colocadores al iniciar: ${this.errorMessage(error)}`,
+          )
+        },
+      )
+    }
+
+    if (this.config.clientesReadConfigured) {
+      void this.refresh('inicio', 'clientes').catch(
+        (error: unknown) => {
+          this.logger.warn(
+            `No se pudo cargar el libro de clientes al iniciar: ${this.errorMessage(error)}`,
           )
         },
       )
@@ -326,6 +344,54 @@ export class ExternalDataService implements OnModuleInit {
     return this.getAllRows('colocadores')
   }
 
+  getAllClientesRows(): ExternalAnnualRow[] {
+    return this.getAllRows('clientes')
+  }
+
+  async getClientesFollowUpRows(): Promise<ExternalAnnualRow[]> {
+    const workbook = await this.reader.readWorkbook(
+      this.config.clientesWorkbookPath,
+      this.config.clientesWorksheetName,
+    )
+    const normalize = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+    const followUpIndex = workbook.headers.findIndex(
+      (header) =>
+        normalize(header.label || header.value).startsWith(
+          'seguimiento',
+        ),
+    )
+    const filtered = {
+      ...workbook,
+      rows: workbook.rows.filter(
+        (row) =>
+          followUpIndex >= 0 &&
+          normalizeSemiannualFollowUp(
+            row.values[followUpIndex] ?? '',
+          ) !== null,
+      ),
+    }
+    const resolved = this.mapper.resolveMapping(
+      filtered,
+      this.config.rawClientesColumnMap,
+    )
+
+    if (resolved.errors.length > 0) {
+      throw new Error(resolved.errors.join('. '))
+    }
+
+    return this.mapper.mapWorkbook(
+      filtered,
+      resolved.mapping,
+      new Date().toISOString(),
+    ).rows
+  }
+
   async getColocadoresFollowUpRows(): Promise<ExternalAnnualRow[]> {
     const workbook = await this.reader.readWorkbook(
       this.config.colocadoresWorkbookPath,
@@ -472,29 +538,44 @@ export class ExternalDataService implements OnModuleInit {
     this.cache.setSyncing(source)
 
     try {
-      const workbook =
-        source === 'colocadores'
-          ? await this.reader.readWorkbook(
-              this.config.colocadoresWorkbookPath,
-              this.config.colocadoresWorksheetName,
-            )
-          : await this.reader.read()
-      const sourceWorkbook =
-        source === 'colocadores'
-          ? this.prepareColocadoresAnnualWorkbook(workbook)
-          : workbook
-      const resolved =
-        source === 'colocadores'
-          ? {
-              mapping: this.colocadoresAnnualMapping(
-                sourceWorkbook.headers,
-              ),
-              errors: [] as string[],
-            }
-          : this.mapper.resolveMapping(
-              sourceWorkbook,
-              this.config.rawColumnMap,
-            )
+      let workbook: ExternalWorkbookData
+      let sourceWorkbook: ExternalWorkbookData
+      let resolved: {
+        mapping: ExternalAnnualMapping
+        errors: string[]
+      }
+
+      if (source === 'colocadores') {
+        workbook = await this.reader.readWorkbook(
+          this.config.colocadoresWorkbookPath,
+          this.config.colocadoresWorksheetName,
+        )
+        sourceWorkbook =
+          this.prepareColocadoresAnnualWorkbook(workbook)
+        resolved = {
+          mapping: this.colocadoresAnnualMapping(
+            sourceWorkbook.headers,
+          ),
+          errors: [],
+        }
+      } else if (source === 'clientes') {
+        workbook = await this.reader.readWorkbook(
+          this.config.clientesWorkbookPath,
+          this.config.clientesWorksheetName,
+        )
+        sourceWorkbook = workbook
+        resolved = this.mapper.resolveMapping(
+          sourceWorkbook,
+          this.config.rawClientesColumnMap,
+        )
+      } else {
+        workbook = await this.reader.read()
+        sourceWorkbook = workbook
+        resolved = this.mapper.resolveMapping(
+          sourceWorkbook,
+          this.config.rawColumnMap,
+        )
+      }
       const mapped = this.mapper.mapWorkbook(
         sourceWorkbook,
         resolved.mapping,
@@ -616,14 +697,12 @@ export class ExternalDataService implements OnModuleInit {
       ? Math.round((dueDate.getTime() - today.getTime()) / DAY_IN_MS)
       : null
     const situation = this.situation(days)
-    const reminderType = this.reminderType(days)
 
     return {
       ...row,
       dueDate: toDateOnly(dueDate),
       daysUntilDue: days,
       situation,
-      reminderType,
     }
   }
 
@@ -641,16 +720,6 @@ export class ExternalDataService implements OnModuleInit {
       return 'DUE_SOON'
     }
     return 'NOT_DUE'
-  }
-
-  private reminderType(days: number | null): ExternalReminderType | null {
-    if (days === null || days > 3 || days < 0) {
-      return null
-    }
-    if (days > 1) {
-      return 'ANNUAL_D3'
-    }
-    return 'ANNUAL_D1'
   }
 
   private needsUpdate(days: number | null): boolean {
@@ -682,15 +751,26 @@ export class ExternalDataService implements OnModuleInit {
   }
 
   private isSourceConfigured(source: ExternalSource): boolean {
-    return source === 'colocadores'
-      ? this.config.colocadoresReadConfigured
-      : this.config.readConfigured
+    if (source === 'colocadores') {
+      return this.config.colocadoresReadConfigured
+    }
+
+    if (source === 'clientes') {
+      return this.config.clientesReadConfigured
+    }
+
+    return this.config.readConfigured
   }
 
   private unconfiguredMessage(source: ExternalSource): string {
     if (source === 'colocadores') {
       return 'Falta EXTERNAL_COLOCADORES_WORKBOOK_PATH para leer FR-SG-81'
     }
+
+    if (source === 'clientes') {
+      return 'Falta EXTERNAL_CLIENTES_WORKBOOK_PATH para leer FR-SG-80'
+    }
+
     return this.config.source === 'file'
       ? 'Falta EXTERNAL_WORKBOOK_PATH para la fuente local'
       : 'Faltan credenciales o identificadores de Microsoft Graph'

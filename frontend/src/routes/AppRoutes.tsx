@@ -22,6 +22,10 @@ export function AppRoutes() {
             <Route element={<AppLayout />}>
               <Route index element={<HomePage />} />
               <Route
+                path="actualizacion-anual/clientes"
+                element={<AnnualUpdatesPage source="clientes" />}
+              />
+              <Route
                 path="actualizacion-anual"
                 element={<AnnualUpdatesPage />}
               />

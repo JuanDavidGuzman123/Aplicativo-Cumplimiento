@@ -1,32 +1,19 @@
 import { api } from './api'
 import type {
-  AppNotification,
-  NotificationsResponse,
+  FollowUpNotification,
+  FollowUpNotificationsResponse,
 } from '../types/notification'
 
-function asAppNotification(
-  notification: AppNotification,
-): AppNotification {
-  return {
-    ...notification,
-    source: 'SEMESTRAL',
-    annualCounterparty: null,
-  }
-}
-
-export async function getNotifications(): Promise<NotificationsResponse> {
-  const { data } = await api.get<NotificationsResponse>('/notifications')
-  return {
-    ...data,
-    data: data.data.map(asAppNotification),
-  }
+export async function getNotifications(): Promise<FollowUpNotificationsResponse> {
+  const { data } = await api.get<FollowUpNotificationsResponse>('/notifications')
+  return data
 }
 
 export async function markNotificationRead(
   id: string,
-): Promise<AppNotification> {
-  const { data } = await api.patch<AppNotification>(
+): Promise<FollowUpNotification> {
+  const { data } = await api.patch<FollowUpNotification>(
     `/notifications/${id}/read`,
   )
-  return asAppNotification(data)
+  return data
 }

@@ -24,6 +24,7 @@ mkdir -p "$BACKUP_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DB_BACKUP="$BACKUP_DIR/db-$STAMP.dump"
 UPLOADS_BACKUP="$BACKUP_DIR/uploads-$STAMP.tar.gz"
+WORKBOOKS_BACKUP="$BACKUP_DIR/workbooks-$STAMP.tar.gz"
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T db \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom \
@@ -33,8 +34,13 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend \
   tar -czf - -C /app/uploads . \
   > "$UPLOADS_BACKUP"
 
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T backend \
+  tar -czf - -C /app/workbooks . \
+  > "$WORKBOOKS_BACKUP"
+
 find "$BACKUP_DIR" -type f -mtime "+$RETENTION_DAYS" -delete
 
 echo "Respaldo completado:"
 echo "  $DB_BACKUP"
 echo "  $UPLOADS_BACKUP"
+echo "  $WORKBOOKS_BACKUP"

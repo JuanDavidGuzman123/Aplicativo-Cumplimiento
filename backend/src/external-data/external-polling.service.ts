@@ -36,6 +36,10 @@ export class ExternalPollingService
         source: 'colocadores',
         configured: this.config.colocadoresReadConfigured,
       },
+      {
+        source: 'clientes',
+        configured: this.config.clientesReadConfigured,
+      },
     ]
 
     for (const { source, configured } of sources) {

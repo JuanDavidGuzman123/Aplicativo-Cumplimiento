@@ -12,6 +12,11 @@ import { UserRole } from '@prisma/client'
 import { CurrentUser } from '../common/decorators/current-user.decorator.js'
 import { Roles } from '../common/decorators/roles.decorator.js'
 import type { AuthenticatedUser } from '../common/types/authenticated-user.js'
+import {
+  ANNUAL_SOURCES,
+  DEFAULT_ANNUAL_SOURCE,
+  type AnnualSource,
+} from './annual-sources.js'
 import { AnnualImportOptionsDto } from './dto/annual-import-options.dto.js'
 import { ListAnnualUpdatesDueQueryDto } from './dto/list-annual-updates-due-query.dto.js'
 import { ListAnnualUpdatesQueryDto } from './dto/list-annual-updates-query.dto.js'
@@ -27,18 +32,26 @@ export class AnnualUpdatesController {
   ) {}
 
   @Get('summary')
-  getSummary() {
-    return this.annualUpdatesService.getSummary()
+  getSummary(@Query('source') source?: string) {
+    return this.annualUpdatesService.getSummary(
+      this.resolveSource(source),
+    )
   }
 
   @Get('updates-due')
   getUpdatesDue(@Query() query: ListAnnualUpdatesDueQueryDto) {
-    return this.annualUpdatesService.getUpdatesDue(query)
+    return this.annualUpdatesService.getUpdatesDue(
+      query,
+      this.resolveSource(query.source),
+    )
   }
 
   @Get()
   findAll(@Query() query: ListAnnualUpdatesQueryDto) {
-    return this.annualUpdatesService.findAll(query)
+    return this.annualUpdatesService.findAll(
+      query,
+      this.resolveSource(query.source),
+    )
   }
 
   @Post('import/preview')
@@ -52,7 +65,11 @@ export class AnnualUpdatesController {
     @UploadedFile() file: UploadedAnnualFile | undefined,
     @Body() dto: AnnualImportOptionsDto,
   ) {
-    return this.annualUpdatesService.preview(file, dto.mapping)
+    return this.annualUpdatesService.preview(
+      file,
+      dto.mapping,
+      this.resolveSource(dto.source),
+    )
   }
 
   @Post('import/confirm')
@@ -71,6 +88,13 @@ export class AnnualUpdatesController {
       file,
       dto.mapping,
       actor.id,
+      this.resolveSource(dto.source),
     )
+  }
+
+  private resolveSource(source?: string): AnnualSource {
+    return ANNUAL_SOURCES.includes(source as AnnualSource)
+      ? (source as AnnualSource)
+      : DEFAULT_ANNUAL_SOURCE
   }
 }

@@ -6,6 +6,8 @@ export const FIELD_ALIASES = {
   document: [
     'numero de documento',
     'número de documento',
+    'nit o numero de documento',
+    'nit o número de documento',
     'numero de documento natural juridica',
     'número de documento natural jurídica',
   ],
@@ -188,9 +190,12 @@ export function columnLetter(index: number): string {
   return result
 }
 
-export function uuidFromDocument(document: string): string {
+export function uuidFromDocument(
+  document: string,
+  prefix = 'colocadores-fr-sg-81',
+): string {
   const hash = createHash('sha256')
-    .update(`colocadores-fr-sg-81:${document}`)
+    .update(`${prefix}:${document}`)
     .digest('hex')
     .slice(0, 32)
     .split('')

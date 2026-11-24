@@ -13,6 +13,7 @@ import type {
 
 const basePaths: Record<ExternalSource, string> = {
   arriendos: '/external-data',
+  clientes: '/external-data/clientes',
 }
 
 function basePath(source: ExternalSource): string {

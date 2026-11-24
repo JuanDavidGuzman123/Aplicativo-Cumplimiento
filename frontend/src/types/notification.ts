@@ -1,15 +1,11 @@
-export type NotificationType =
-  | 'D30'
-  | 'D15'
-  | 'DUE'
-  | 'OVERDUE'
+export type FollowUpNotificationType = 'D30' | 'D15' | 'DUE' | 'OVERDUE'
+
+export type AnnualNotificationType =
   | 'ANNUAL_D15'
   | 'ANNUAL_D10'
   | 'ANNUAL_D5'
   | 'ANNUAL_D3'
   | 'ANNUAL_D1'
-
-export type NotificationSource = 'SEMESTRAL' | 'ANNUAL'
 
 export type NotificationCounterparty = {
   id: string
@@ -19,29 +15,39 @@ export type NotificationCounterparty = {
 
 export type NotificationAnnualCounterparty = {
   id: string
+  source: 'arriendos' | 'clientes'
   code: string
   businessName: string
 }
 
-export type AppNotification = {
+export type FollowUpNotification = {
   id: string
-  type: NotificationType
+  type: FollowUpNotificationType
   message: string
   scheduledDate: string | null
   createdAt: string
-  source: NotificationSource
   counterparty: NotificationCounterparty | null
+  read: boolean
+  readAt: string | null
+}
+
+export type AnnualNotification = {
+  id: string
+  type: AnnualNotificationType
+  message: string
+  scheduledDate: string | null
+  createdAt: string
   annualCounterparty: NotificationAnnualCounterparty | null
   read: boolean
   readAt: string | null
 }
 
-export type NotificationsResponse = {
-  data: AppNotification[]
+export type FollowUpNotificationsResponse = {
+  data: FollowUpNotification[]
   unreadCount: number
 }
 
 export type AnnualNotificationsResponse = {
-  data: AppNotification[]
+  data: AnnualNotification[]
   unreadCount: number
 }

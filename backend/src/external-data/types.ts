@@ -1,4 +1,8 @@
-export const EXTERNAL_SOURCES = ['arriendos', 'colocadores'] as const
+export const EXTERNAL_SOURCES = [
+  'arriendos',
+  'colocadores',
+  'clientes',
+] as const
 
 export type ExternalSource = (typeof EXTERNAL_SOURCES)[number]
 
@@ -22,13 +26,6 @@ export type ExternalUpdateSituation =
   | 'DUE_TODAY'
   | 'DUE_SOON'
   | 'NOT_DUE'
-
-export type ExternalReminderType =
-  | 'ANNUAL_D15'
-  | 'ANNUAL_D10'
-  | 'ANNUAL_D5'
-  | 'ANNUAL_D3'
-  | 'ANNUAL_D1'
 
 export type ExternalAnnualMapping = Partial<
   Record<
@@ -72,7 +69,6 @@ export type ExternalUpdateDueRow = ExternalAnnualRow & {
   dueDate: string | null
   daysUntilDue: number | null
   situation: ExternalUpdateSituation
-  reminderType: ExternalReminderType | null
 }
 
 export type ExternalSummary = {

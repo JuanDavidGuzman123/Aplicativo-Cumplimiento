@@ -37,7 +37,6 @@ import type {
   ExternalDueListResponse as AnnualUpdatesDueResponse,
   ExternalListParams as AnnualUpdateListParams,
   ExternalAnnualListResponse as AnnualUpdateListResponse,
-  ExternalReminderType as AnnualReminderType,
   ExternalReportMetric,
   ExternalSource,
   ExternalSummary as AnnualUpdateSummary,
@@ -66,6 +65,11 @@ const sourceCopy: Record<
     title: 'Actualizacion Anual Arriendos',
     description:
       'Consulte el estado de la actualización anual de los puntos de venta y sus vencimientos desde el libro externo. Este proceso es independiente del seguimiento semestral.',
+  },
+  clientes: {
+    title: 'Actualizacion Anual Clientes',
+    description:
+      'Consulte el estado de la actualización anual de los clientes corporativos y sus vencimientos desde FR-SG-80. El seguimiento semestral se gestiona por separado.',
   },
 }
 
@@ -126,17 +130,6 @@ const annualSituationTones: Record<
   DUE_TODAY: 'amber',
   DUE_SOON: 'blue',
   NOT_DUE: 'green',
-}
-
-const annualReminderLabels: Record<
-  AnnualReminderType,
-  string
-> = {
-  ANNUAL_D15: '15 días',
-  ANNUAL_D10: '10 días',
-  ANNUAL_D5: '5 días',
-  ANNUAL_D3: '3 días',
-  ANNUAL_D1: '1 día',
 }
 
 type StatCard = {
@@ -1032,7 +1025,6 @@ export function AnnualUpdatesPage({
                     <th className="px-4 py-3">Fecha límite</th>
                     <th className="px-4 py-3">Días</th>
                     <th className="px-4 py-3">Situación</th>
-                    <th className="px-4 py-3">Alerta</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1062,11 +1054,6 @@ export function AnnualUpdatesPage({
                             ]
                           }
                         </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {row.reminderType
-                          ? annualReminderLabels[row.reminderType]
-                          : '—'}
                       </td>
                     </tr>
                   ))}

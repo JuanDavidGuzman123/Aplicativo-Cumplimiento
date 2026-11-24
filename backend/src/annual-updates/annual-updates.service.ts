@@ -13,12 +13,15 @@ import {
 } from '../common/utils/dates.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import {
+  DEFAULT_ANNUAL_SOURCE,
+  type AnnualSource,
+} from './annual-sources.js'
+import {
   annualDueDate,
   annualSituation,
   daysUntil,
   minimumAnnualFilingDate,
   needsAnnualUpdate,
-  resolveAnnualReminderType,
 } from './annual-dates.js'
 import {
   ANNUAL_IMPORT_FIELDS,
@@ -138,6 +141,7 @@ function emptyImportSummary(
 
 const annualSelect = {
   id: true,
+  source: true,
   code: true,
   businessName: true,
   status: true,
@@ -195,9 +199,11 @@ function updatedInYear(
 function updatedThisYearWhere(
   year: number,
   status?: AnnualStatus,
+  source?: AnnualSource,
 ): Prisma.AnnualCounterpartyWhereInput {
   return {
     ...(status ? { status } : {}),
+    ...(source ? { source } : {}),
     OR: [
       { filingYear: year },
       {
@@ -214,9 +220,11 @@ function updatedThisYearWhere(
 function recentFilingWhere(
   currentYear: number,
   status?: AnnualStatus,
+  source?: AnnualSource,
 ): Prisma.AnnualCounterpartyWhereInput {
   return {
     ...(status ? { status } : {}),
+    ...(source ? { source } : {}),
     OR: [
       { filingYear: { gte: currentYear - 1 } },
       {
@@ -311,6 +319,7 @@ function serializeAnnual(row: AnnualRow, currentYear: number) {
 
   return {
     id: row.id,
+    source: row.source,
     code: row.code,
     businessName: row.businessName,
     status: row.status,
@@ -342,11 +351,13 @@ export class AnnualUpdatesService {
     private readonly annualNotifications: AnnualNotificationsService,
   ) {}
 
-  async getSummary() {
+  async getSummary(
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
+  ) {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
-    const active = { status: AnnualStatus.ACTIVE }
-    const inactive = { status: AnnualStatus.INACTIVE }
+    const active = { status: AnnualStatus.ACTIVE, source }
+    const inactive = { status: AnnualStatus.INACTIVE, source }
     const noFilingData = {
       filingDate: null,
       filingYear: null,
@@ -372,12 +383,14 @@ export class AnnualUpdatesService {
         where: updatedThisYearWhere(
           currentYear,
           AnnualStatus.ACTIVE,
+          source,
         ),
       }),
       this.prisma.annualCounterparty.count({
         where: updatedThisYearWhere(
           currentYear,
           AnnualStatus.INACTIVE,
+          source,
         ),
       }),
       this.prisma.annualCounterparty.count({
@@ -399,15 +412,24 @@ export class AnnualUpdatesService {
         },
       }),
       this.prisma.annualCounterparty.count({
-        where: recentFilingWhere(currentYear, AnnualStatus.ACTIVE),
+        where: recentFilingWhere(
+          currentYear,
+          AnnualStatus.ACTIVE,
+          source,
+        ),
       }),
       this.prisma.annualCounterparty.count({
         where: {
           AND: [
-            recentFilingWhere(currentYear, AnnualStatus.ACTIVE),
+            recentFilingWhere(
+              currentYear,
+              AnnualStatus.ACTIVE,
+              source,
+            ),
             updatedThisYearWhere(
               currentYear,
               AnnualStatus.ACTIVE,
+              source,
             ),
           ],
         },
@@ -445,10 +467,13 @@ export class AnnualUpdatesService {
     }
   }
 
-  async findAll(query: ListAnnualUpdatesQueryDto) {
+  async findAll(
+    query: ListAnnualUpdatesQueryDto,
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
+  ) {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
-    const where = this.buildWhere(query, currentYear)
+    const where = this.buildWhere(query, currentYear, source)
     const page = query.page
     const pageSize = query.pageSize
 
@@ -478,12 +503,16 @@ export class AnnualUpdatesService {
     }
   }
 
-  async getUpdatesDue(query: ListAnnualUpdatesDueQueryDto) {
+  async getUpdatesDue(
+    query: ListAnnualUpdatesDueQueryDto,
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
+  ) {
     const today = getBusinessToday()
     const currentYear = today.getUTCFullYear()
     const minimumFilingDate = minimumAnnualFilingDate(currentYear)
     const rows = await this.prisma.annualCounterparty.findMany({
       where: {
+        source,
         status: AnnualStatus.ACTIVE,
         filingDate: { gte: minimumFilingDate },
       },
@@ -505,7 +534,6 @@ export class AnnualUpdatesService {
           dueDate: toDateOnly(dueDate),
           daysUntilDue: days,
           situation: annualSituation(days),
-          reminderType: resolveAnnualReminderType(days),
         }
       })
       .filter((row) => row.situation !== 'NOT_DUE')
@@ -557,6 +585,7 @@ export class AnnualUpdatesService {
   async preview(
     file: UploadedAnnualFile | undefined,
     mappingInput?: string,
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
   ) {
     const parsed = await this.parseFile(file)
     const mapping = this.resolveMapping(parsed, mappingInput)
@@ -587,6 +616,7 @@ export class AnnualUpdatesService {
       parsed,
       mapping,
       getBusinessToday(),
+      source,
     )
 
     return {
@@ -603,6 +633,7 @@ export class AnnualUpdatesService {
     file: UploadedAnnualFile | undefined,
     mappingInput: string | undefined,
     actorId: string,
+    source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
   ) {
     const parsed = await this.parseFile(file)
     const mapping = this.resolveMapping(parsed, mappingInput)
@@ -620,6 +651,7 @@ export class AnnualUpdatesService {
       parsed,
       mapping,
       getBusinessToday(),
+      source,
     )
 
     if (validation.summary.validRows === 0) {
@@ -652,6 +684,7 @@ export class AnnualUpdatesService {
           }
 
           const data = {
+            source,
             code: row.code,
             codeNormalized: row.codeNormalized,
             businessName: row.businessName,
@@ -668,7 +701,12 @@ export class AnnualUpdatesService {
           }
 
           await tx.annualCounterparty.upsert({
-            where: { codeNormalized: row.codeNormalized },
+            where: {
+              source_codeNormalized: {
+                source,
+                codeNormalized: row.codeNormalized,
+              },
+            },
             create: data,
             update: data,
           })
@@ -700,13 +738,14 @@ export class AnnualUpdatesService {
       action: 'ANNUAL_UPDATES_IMPORTED',
       entity: 'AnnualCounterparty',
       details: {
+        source,
         fileName: parsed.fileName,
         ...resultSummary,
       },
     })
 
     try {
-      await this.annualNotifications.generateDaily()
+      await this.annualNotifications.generateDaily(source)
     } catch (error) {
       this.logger.error(
         'No fue posible generar las notificaciones anuales tras la importación',
@@ -716,6 +755,7 @@ export class AnnualUpdatesService {
 
     return {
       file: {
+        source,
         name: parsed.fileName,
         sheetName: parsed.sheetName,
       },
@@ -726,8 +766,11 @@ export class AnnualUpdatesService {
   private buildWhere(
     query: ListAnnualUpdatesQueryDto,
     currentYear: number,
+    source: AnnualSource,
   ): Prisma.AnnualCounterpartyWhereInput {
-    const conditions: Prisma.AnnualCounterpartyWhereInput[] = []
+    const conditions: Prisma.AnnualCounterpartyWhereInput[] = [
+      { source },
+    ]
 
     if (query.status) {
       conditions.push({ status: query.status })
@@ -764,6 +807,7 @@ export class AnnualUpdatesService {
         this.annualStatusWhere(
           query.annualStatus,
           currentYear,
+          source,
         ),
       )
     }
@@ -774,19 +818,25 @@ export class AnnualUpdatesService {
   private annualStatusWhere(
     status: AnnualUpdateFilter,
     currentYear: number,
+    source: AnnualSource,
   ): Prisma.AnnualCounterpartyWhereInput {
     if (status === 'UPDATED_THIS_YEAR') {
-      return updatedThisYearWhere(currentYear)
+      return updatedThisYearWhere(currentYear, undefined, source)
     }
 
     if (status === 'NO_DATE') {
-      return { filingDate: null, filingYear: null }
+      return {
+        source,
+        filingDate: null,
+        filingYear: null,
+      }
     }
 
     const start = yearStart(currentYear)
     const end = nextYearStart(currentYear)
 
     return {
+      source,
       status: AnnualStatus.ACTIVE,
       OR: [
         { filingYear: { lt: currentYear } },
@@ -988,6 +1038,7 @@ export class AnnualUpdatesService {
     parsed: ParsedAnnualFile,
     mapping: AnnualImportMapping,
     today: Date,
+    source: AnnualSource,
   ): Promise<AnnualValidation> {
     const currentYear = today.getUTCFullYear()
     const codes = parsed.rows
@@ -1004,6 +1055,7 @@ export class AnnualUpdatesService {
 
     const existingRows = await this.prisma.annualCounterparty.findMany({
       where: {
+        source,
         codeNormalized: { in: [...new Set(codes)] },
       },
       select: {

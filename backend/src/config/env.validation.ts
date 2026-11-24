@@ -73,6 +73,10 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  SCHEDULE_ANNUAL_NOTIFICATIONS_CRON = '0 7 * * *';
+
+  @IsString()
+  @IsOptional()
   UPLOAD_DIR = '../uploads';
 
   @Type(() => Number)
@@ -151,6 +155,18 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   EXTERNAL_COLOCADORES_WORKSHEET_NAME = 'FR-SG-81';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_CLIENTES_WORKBOOK_PATH = '';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_CLIENTES_WORKSHEET_NAME = 'FR-SG-80';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_CLIENTES_COLUMN_MAP = '';
 
   @IsString()
   @IsOptional()

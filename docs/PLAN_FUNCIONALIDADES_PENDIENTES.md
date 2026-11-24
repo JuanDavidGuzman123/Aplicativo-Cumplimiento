@@ -88,6 +88,57 @@ Organizar **Contrapartes en seguimiento** en categorías escalables, empezando p
 - La sincronización de Arriendos lee FR-SG-79 en modo solo lectura, toma solo las filas con `Seguimiento Si / No = Sí`, usa la columna `Numero de documento Natural / Juridica` como NIT y deduplica por NIT normalizado.
 - La sincronización no sobreescribe contrapartes existentes: registra solo las nuevas con categoría `ARRIENDOS` y subproceso predeterminado **Debida diligencia**.
 - Las filas con estado `I` del libro se registran como archivadas y conservan el motivo en observaciones de archivado; el historial de evaluaciones no se altera.
-- El seguimiento de contrapartes es semestral: creaciones, evaluaciones y reactivaciones programan el próximo seguimiento 6 meses después de la fecha de diligencia/evaluación. La actualización anual con vencimiento de 12 meses existe solo para Arriendos en **Actualizaciones**; Colocadores no participa de ese flujo.
-- Colocadores independientes usa el mismo flujo de seguimiento en la UI: botón **Traer de FR-SG-81**, filtro `Seguimiento Si/No = Si` o `No`, categoría `COLOCADORES_INDEPENDIENTES` y seguimiento semestral. Lee el workbook local sin Graph y solo escribe `Seguimiento Si/No` y `Observaciones`; archivar escribe `No` y reactivar escribe `Si`, y ambas acciones reemplazan la observación con lo redactado en la app. El historial queda en PostgreSQL. No tiene actualización anual: esa pantalla y esa API son exclusivas de Arriendos.
+- El seguimiento de contrapartes es semestral: creaciones, evaluaciones y reactivaciones programan el próximo seguimiento 6 meses después de la fecha de diligencia/evaluación. La actualización anual con vencimiento de 12 meses existe para Arriendos y Clientes en rutas separadas; Colocadores no participa de ese flujo.
+- Colocadores independientes usa el mismo flujo de seguimiento en la UI: botón **Traer de FR-SG-81**, filtro `Seguimiento Si/No = Si` o `No`, categoría `COLOCADORES_INDEPENDIENTES` y seguimiento semestral. Lee el workbook local sin Graph y solo escribe `Seguimiento Si/No` y `Observaciones`; archivar escribe `No` y reactivar escribe `Si`, y ambas acciones reemplazan la observación con lo redactado en la app. El historial queda en PostgreSQL. No tiene actualización anual: ese flujo pertenece solo a Arriendos y Clientes.
 - Arriendos usa el mismo flujo de evaluación y reactivación sobre FR-SG-79, localiza la fila por documento y escribe únicamente `Seguimiento Si/No` y `Observaciones`; el historial sigue en PostgreSQL. `sync-arriendos` importa solo las filas marcadas `Sí` y sigue siendo una acción manual independiente.
+
+## 4. Independencia total de alertas
+
+### Objetivo
+Separar por completo la alerta de actualización anual de arriendos de la alerta de seguimiento semestral de contrapartes, sin mezclar contadores, marcas de lectura, navegación ni programación.
+
+### Estado
+**Implementado** el 24/11/2026: dos campanas juntas en el encabezado, tipos y servicios separados en el frontend, cron `SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` independiente de `SCHEDULE_NOTIFICATIONS_CRON`, y sin columna **Alerta** calculada en la tabla de vencimientos de Actualización anual. No se creó una página de alertas separada.
+
+### Reglas funcionales
+- La campana de seguimiento solo consulta `/api/notifications`, marca `/api/notifications/:id/read` y navega a `/contrapartes/:id`.
+- La campana de actualización anual solo consulta `/api/annual-notifications`, marca `/api/annual-notifications/:id/read` y navega a `/actualizacion-anual?code=...` para Arriendos o a `/actualizacion-anual/clientes?code=...` para Clientes.
+- Marcar como leída una alerta de una familia no modifica el contador de la otra.
+- La generación diaria de cada familia usa su propia variable de entorno cron; ambas conservan la zona `America/Bogota` y `skipDuplicates`.
+- Los tipos `ANNUAL_D15`, `ANNUAL_D10` y `ANNUAL_D5` se conservan solo para alertas históricas; no se generan alertas nuevas de esos tipos.
+- No se modifica PostgreSQL ni los workbooks; `Notification`/`AnnualNotification` ya estaban separados en la base.
+
+### Validación
+- Verificar build, lint y tests de backend y frontend.
+- Verificar en la UI que cada campana tenga su contador, que la alerta anual abra `/actualizacion-anual?code=...` para Arriendos o `/actualizacion-anual/clientes?code=...` para Clientes, y que la tabla de vencimientos ya no muestre **Alerta**.
+
+## 7. Clientes corporativos
+
+### Objetivo
+Gestionar para Clientes el mismo par de procesos que para Arriendos: actualización anual con alertas D3/D1 y seguimiento semestral con historial, sin mezclar códigos, notificaciones ni registros con Arriendos.
+
+### Estado
+**Implementado** el 24/11/2026: ruta `/actualizacion-anual/clientes`, endpoints `/api/external-data/clientes/*`, `POST /counterparties/sync-clientes`, categoría `CLIENTES`, `AnnualCounterparty.source` con unique `(source, codeNormalized)`, notificaciones anuales por fuente y campana con navegación source-aware. Falta configurar `EXTERNAL_CLIENTES_WORKBOOK_PATH` en el entorno real; sin esa variable la fuente queda `unconfigured`.
+
+### Fuente confirmada
+- Carpeta: `W:\124 CUMPLIMIENTO\124. PE GI CUMPLIMIENTO\1. DEBIDA DILIGENCIA\4. Clientes corporativos`.
+- Libro: `FR-SG-80 Base De Datos Clientes Corporativos.xlsx`.
+- Hoja: `FR-SG-80`.
+- Encabezados usados en fila 3: `1 Nit o Número de documento`, `2 Nombre y/o razón social`, `3 Fecha Debida Diligencia`, `4 Año`, `5 Activo/Inactivo`, `15 Criterios De Evaluacion`, `16 Excepciones Si / No`, `17 Seguimiento Si/No`, `18 Observaciones` y `19 Riesgo Jurisdiccional`.
+- Volumen observado: 710 filas de datos, 142 NITs únicos y 290 números de firma únicos. No hay solapamiento de NITs con Arriendos ni Colocadores.
+- Al corte observado, `Seguimiento Si/No` estaba vacío en las 710 filas, `Excepciones Si / No` tenía 42 `Sí` y 496 `No`, y `Activo/Inactivo` tenía 538 `A` y 30 `I`.
+
+### Decisiones aplicadas
+1. Estado inicial: dejar `Seguimiento Si/No` vacío en `FR-SG-80`; por eso el sync inicial es 0 y el usuario debe marcar manualmente `Si`/`No`.
+2. Dedupe del libro: por NIT/documento, conservando la fila más reciente por año/fecha.
+3. Sincronización: `Si` crea contraparte activa y `No` archivada en la categoría `CLIENTES`, con ID derivado del documento y prefijo `clientes-fr-sg-80`.
+4. Anual: el mismo NIT/código puede existir en Arriendos y Clientes porque la unique es `(source, codeNormalized)`. Las alertas viajan con `source` y abren la pantalla correspondiente.
+5. Escritura: solo las celdas existentes `17 Seguimiento Si/No` y `18 Observaciones`, con guardado seguro, validación del XML y rollback si falla la transacción.
+6. No se agrega NIT, ID, columna ni fila al libro; no se usa Graph para Clientes.
+
+### Fases
+1. **Configuración**: `EXTERNAL_CLIENTES_WORKBOOK_PATH`, `EXTERNAL_CLIENTES_WORKSHEET_NAME=FR-SG-80` y opcional `EXTERNAL_CLIENTES_COLUMN_MAP`.
+2. **Backend**: snapshot y endpoints por fuente, mapper con aliases FR-SG-80, sync a PostgreSQL y workbook writer.
+3. **Frontend**: tarjeta y menú de actualización anual de Clientes, botón **Traer de FR-SG-80** y campana source-aware.
+4. **Despliegue**: mounts de workbooks en `docker-compose.prod.yml`, variables en los `.env.example` y respaldo de `/app/workbooks` en `deploy/backup.sh`.
+5. **Validación**: tests de source, sync, aislamiento de snapshots y escritura segura; build/lint/test/e2e.

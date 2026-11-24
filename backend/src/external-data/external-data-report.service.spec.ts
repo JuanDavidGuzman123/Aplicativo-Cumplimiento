@@ -23,7 +23,6 @@ const row: ExternalUpdateDueRow = {
   dueDate: '2026-11-21',
   daysUntilDue: 0,
   situation: 'DUE_TODAY',
-  reminderType: 'ANNUAL_D1',
 }
 
 describe('ExternalDataReportService', () => {

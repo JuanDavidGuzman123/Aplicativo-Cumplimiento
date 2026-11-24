@@ -11,6 +11,7 @@ import {
   Min,
 } from 'class-validator'
 import { AnnualStatus } from '@prisma/client'
+import { ANNUAL_SOURCES } from '../annual-sources.js'
 
 export const ANNUAL_UPDATE_FILTERS = [
   'UPDATED_THIS_YEAR',
@@ -22,6 +23,15 @@ export type AnnualUpdateFilter =
   (typeof ANNUAL_UPDATE_FILTERS)[number]
 
 export class ListAnnualUpdatesQueryDto {
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsIn([...ANNUAL_SOURCES], {
+    message: 'El origen de la actualización anual no es válido',
+  })
+  source?: string
+
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim() : value,
   )

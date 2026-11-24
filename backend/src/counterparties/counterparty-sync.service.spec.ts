@@ -39,6 +39,7 @@ describe('CounterpartySyncService', () => {
     refresh: ReturnType<typeof vi.fn>
     getAllRows: ReturnType<typeof vi.fn>
     getAllColocadoresRows: ReturnType<typeof vi.fn>
+    getClientesFollowUpRows: ReturnType<typeof vi.fn>
   }
   let categories: { resolveId: ReturnType<typeof vi.fn> }
   let audit: { record: ReturnType<typeof vi.fn> }
@@ -58,6 +59,7 @@ describe('CounterpartySyncService', () => {
       refresh: vi.fn().mockResolvedValue({ rowCount: 3 }),
       getAllRows: vi.fn(),
       getAllColocadoresRows: vi.fn(),
+      getClientesFollowUpRows: vi.fn().mockResolvedValue([]),
     }
     categories = { resolveId: vi.fn().mockResolvedValue('category-1') }
     audit = { record: vi.fn() }
@@ -136,6 +138,44 @@ describe('CounterpartySyncService', () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'SYNC_COLOCADORES_COUNTERPARTIES',
+      }),
+    )
+  })
+
+  it('sincroniza Clientes desde FR-SG-80 conservando el ID del workbook', async () => {
+    externalData.getClientesFollowUpRows.mockResolvedValue([
+      row({ id: 'a', nit: '1234567', requiresSemiannualFollowUp: true }),
+      row({
+        id: 'b',
+        nit: '7654321',
+        requiresSemiannualFollowUp: false,
+      }),
+    ])
+    prisma.counterparty.createMany.mockResolvedValue({ count: 2 })
+
+    const result = await service.syncClientes('user-1')
+
+    expect(externalData.refresh).toHaveBeenCalledWith(
+      'sincronización de contrapartes de Clientes',
+      'clientes',
+    )
+    expect(categories.resolveId).toHaveBeenCalledWith('CLIENTES')
+    const data = prisma.counterparty.createMany.mock.calls[0][0].data
+    expect(data).toHaveLength(2)
+    expect(data[0].id).toBe(
+      uuidFromDocument('1234567', 'clientes-fr-sg-80'),
+    )
+    expect(data[1].status).toBe('ARCHIVED')
+    expect(result).toEqual({
+      sourceRows: 3,
+      followUpRows: 2,
+      created: 2,
+      alreadyExisting: 0,
+      skippedInvalid: 0,
+    })
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'SYNC_CLIENTES_COUNTERPARTIES',
       }),
     )
   })

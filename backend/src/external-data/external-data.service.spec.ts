@@ -116,8 +116,8 @@ describe('ExternalDataService', () => {
       'DUE_SOON',
       'DUE_SOON',
     ])
-    expect(result.data[1].reminderType).toBe('ANNUAL_D3')
-    expect(result.data[2].reminderType).toBeNull()
+    expect(result.data[1].daysUntilDue).toBe(3)
+    expect(result.data[2].daysUntilDue).toBe(8)
     expect(result.summary).toMatchObject({
       needsUpdate: 1,
       overdue: 1,
@@ -246,12 +246,18 @@ describe('ExternalDataService', () => {
     expect(service.getSummary().annual.inactive.pendingUpdate).toBe(0)
   })
 
-  it('aísla los datos de Arriendos y Colocadores por fuente', () => {
+  it('aísla los datos de Arriendos, Colocadores y Clientes por fuente', () => {
     const arriendos = [row('A', filingDateForDue(1))]
     const colocadores = [row('C', filingDateForDue(2))]
+    const clientes = [row('L', filingDateForDue(3))]
     const cache = {
       getSnapshot: vi.fn((source = 'arriendos') => ({
-        rows: source === 'colocadores' ? colocadores : arriendos,
+        rows:
+          source === 'colocadores'
+            ? colocadores
+            : source === 'clientes'
+              ? clientes
+              : arriendos,
       })),
       getStatus: vi.fn(() => status),
     }
@@ -264,10 +270,15 @@ describe('ExternalDataService', () => {
 
     expect(service.getSummary('arriendos').totals.total).toBe(1)
     expect(service.getSummary('colocadores').totals.total).toBe(1)
+    expect(service.getSummary('clientes').totals.total).toBe(1)
     expect(
       service.findAll({ page: 1, pageSize: 10 }, 'colocadores').data[0]
         .code,
     ).toBe('C')
-    expect(cache.getSnapshot).toHaveBeenCalledWith('colocadores')
+    expect(
+      service.findAll({ page: 1, pageSize: 10 }, 'clientes').data[0]
+        .code,
+    ).toBe('L')
+    expect(cache.getSnapshot).toHaveBeenCalledWith('clientes')
   })
 })

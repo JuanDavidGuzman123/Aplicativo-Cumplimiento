@@ -116,7 +116,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - El cliente React usa un hook con `fetch` streaming y header `Authorization` para SSE; `EventSource` no se usa porque no permite enviar el JWT. El badge muestra conexión, frescura, última actualización y error, y ofrece sincronización manual.
 - Las notificaciones de cambio no traen celdas: cada evento dispara una lectura completa del libro. En modo `graph`, `ExternalSubscriptionService` crea/renueva la suscripción con expiración de dos días, renovación cada hora y ventana de seis horas. En modo `file` la suscripción queda `disabled`; `ExternalPollingService` recarga según `EXTERNAL_FALLBACK_POLL_MS` (60 s por defecto) y también existe sincronización manual.
 - `EXTERNAL_DATA_ENABLED` es `false` por defecto. En modo `graph` se requieren credenciales de solo lectura (`Files.Read.All`, `Sites.Read.All` o `Sites.Selected` según el tenant), URLs/IDs del libro, URL pública base de la API y `clientState` de al menos 16 caracteres. En modo `file` solo se requiere `EXTERNAL_WORKBOOK_PATH` y no se usan credenciales de Microsoft. Graph queda pendiente de consentimiento de administrador.
-- Verificado con 91 pruebas unitarias en 23 archivos, build y lint en backend y frontend. El modo local se validó con `FR-SG-79`: 637 registros, 0 errores de mapeo y estado `connected`/`fresh`, además de escrituras seguras sobre copias de `FR-SG-79` y `FR-SG-81`. La sincronización real quedó ajustada a las 2 filas con `Sí` de Arriendos y a 5 filas válidas de Colocadores. Graph queda pendiente de consentimiento de administrador y de un webhook HTTPS público.
+- Verificado con 92 pruebas unitarias en 23 archivos, build y lint en backend y frontend. El modo local se validó con `FR-SG-79`: 637 registros, 0 errores de mapeo y estado `connected`/`fresh`, además de escrituras seguras sobre copias de `FR-SG-79`, `FR-SG-80` y `FR-SG-81`. La sincronización real quedó ajustada a las 2 filas con `Sí` de Arriendos y a 5 filas válidas de Colocadores. Clientes se validó con 710 filas y 142 NITs únicos en `FR-SG-80`, sin `Seguimiento Si/No` marcado inicialmente. Graph queda pendiente de consentimiento de administrador y de un webhook HTTPS público.
 
 ### Workbook de seguimiento de Colocadores
 
@@ -131,6 +131,14 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - FR-SG-79 se usa para la actualización anual y, además, como destino de escritura del seguimiento de Arriendos. El archivo local se configura con `EXTERNAL_WORKBOOK_PATH` y la hoja con `EXTERNAL_DATA_WORKSHEET_NAME` (por defecto `FR-SG-79`).
 - `POST /counterparties/:id/risk-evaluation` y `POST /counterparties/:id/reactivate` localizan la fila por `Numero de documento Natural / Juridica`, escriben solo `Seguimiento Si/No` y `Observaciones`, y usan el mismo guardado seguro que Colocadores.
 - PostgreSQL es la fuente del historial de Arriendos (`RiskEvaluation`). `POST /counterparties/sync-arriendos` importa solo las filas con `Seguimiento Si / No = Sí` de FR-SG-79. Si la transacción de base de datos falla después de escribir el Excel, el servicio intenta restaurar las dos celdas previas.
+
+### Workbook y actualización anual de Clientes
+
+- FR-SG-80 se lee desde `EXTERNAL_CLIENTES_WORKBOOK_PATH` con la hoja `EXTERNAL_CLIENTES_WORKSHEET_NAME` (por defecto `FR-SG-80`). El mapeo se detecta por alias, o se fija con `EXTERNAL_CLIENTES_COLUMN_MAP`. Las columnas usadas son `1 Nit o Número de documento`, `2 Nombre y/o razón social`, `3 Fecha Debida Diligencia`, `4 Año`, `5 Activo/Inactivo`, `15 Criterios De Evaluacion`, `16 Excepciones Si / No`, `17 Seguimiento Si/No`, `18 Observaciones` y `19 Riesgo Jurisdiccional`.
+- Clientes tiene su propio snapshot, estado, SSE y endpoints bajo `/external-data/clientes/*`, y pantalla `/actualizacion-anual/clientes`. El dedupe anual es por NIT/documento y el snapshot conserva la fila más reciente.
+- `POST /counterparties/sync-clientes` sincroniza a PostgreSQL solo las filas con `Seguimiento Si/No = Si` o `No` en la categoría `CLIENTES`: `Si` queda activa y `No` archivada. El ID derivado usa el prefijo `clientes-fr-sg-80` para no colisionar con Colocadores. No se agrega ninguna columna ni ID al libro.
+- La decisión inicial fue dejar `Seguimiento Si/No` vacío en `FR-SG-80`, por lo que el sync inicial es 0. Las evaluaciones y reactivaciones futuras escriben solo las celdas existentes `17 Seguimiento Si/No` y `18 Observaciones`, con el mismo guardado seguro de Arriendos y Colocadores, y registran el historial en `RiskEvaluation`.
+- `AnnualCounterparty.source` separa los registros anuales de Arriendos y Clientes. La unique compuesta `(source, codeNormalized)` permite que el mismo código exista en ambas fuentes; las alertas anuales y las notificaciones conservan `source` y navegan a la pantalla correspondiente.
 
 ### Dashboard (Fase 8)
 
@@ -206,7 +214,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - **Frontend**: SPA React + Vite + TypeScript + Tailwind CSS + Lucide + React Router + Axios + React Hook Form + Zod. Consume la API REST y no contiene reglas de negocio.
 - **Backend**: NestJS + TypeScript estricto, API REST bajo el prefijo `/api`, validación con DTOs (`class-validator`/`class-transformer`), Prisma ORM y PostgreSQL como única base de datos.
 - **Archivos**: Multer guarda los documentos en `uploads/` con nombre UUID. No se sirven como estáticos: se descargan por un endpoint autenticado.
-- **Datos externos**: la fuente anual de Arriendos se lee de un único libro, con Microsoft Graph o desde un `.xlsx` local; el snapshot vive solo en memoria y se publica por SSE autenticado. El webhook (solo Graph) y el polling solo disparan recargas; ese flujo de actualización anual nunca escribe en el libro ni transfiere datos hacia o desde PostgreSQL. Los seguimientos de Colocadores y Arriendos usan FR-SG-81 y FR-SG-79 como fuente de lectura y destino de escritura en archivos locales; no usan Graph para escribir. Sus sincronizaciones manuales transfieren filas válidas a PostgreSQL, y evaluaciones y reactivaciones se registran en `RiskEvaluation` para ambas categorías.
+- **Datos externos**: la fuente anual de Arriendos se lee de un único libro, con Microsoft Graph o desde un `.xlsx` local; Clientes se lee de `FR-SG-80` en modo archivo. Cada snapshot vive solo en memoria y se publica por SSE autenticado. El webhook (solo Graph) y el polling solo disparan recargas; esos flujos de actualización anual nunca escriben en el libro ni transfieren datos hacia o desde PostgreSQL. Los seguimientos de Clientes, Colocadores y Arriendos usan FR-SG-80, FR-SG-81 y FR-SG-79 como fuente de lectura y destino de escritura en archivos locales; no usan Graph para escribir. Sus sincronizaciones manuales transfieren filas válidas a PostgreSQL, y evaluaciones y reactivaciones se registran en `RiskEvaluation` para las tres categorías.
 - **Autenticación**: JWT de acceso (8 h por defecto) + bcrypt para contraseñas. Un guard valida el token y consulta el usuario para verificar que siga activo.
 - **Notificaciones**: tabla global + tabla de lecturas por usuario. Tarea diaria con `@nestjs/schedule`.
 - **Fechas**: se almacenan como `date` (sin hora) y se calculan con la zona `America/Bogota`.
@@ -226,7 +234,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 | `annual-notifications` | Generación diaria, listado y lectura por usuario de recordatorios anuales |
 | `imports` | Carga de Excel, mapeo de columnas, vista previa y confirmación transaccional |
 | `annual-updates` | Base anual independiente: importación por código, conteos, consulta y vencimientos |
-| `external-data` | Lectura de libro único vía Graph o archivo local, caché en memoria, webhook, polling, REST y SSE para la pantalla anual; lectura y escritura local segura de FR-SG-81 y FR-SG-79, y fuente de las sincronizaciones manuales hacia PostgreSQL |
+| `external-data` | Lectura de Arriendos vía Graph o archivo local y de Clientes desde FR-SG-80, caché por fuente en memoria, webhook, polling, REST y SSE para las pantallas anuales; lectura y escritura local segura de FR-SG-81, FR-SG-80 y FR-SG-79, y fuente de las sincronizaciones manuales hacia PostgreSQL |
 | `dashboard` | Indicadores del calendario y listado paginado de contrapartes por atender |
 | `audit` | Registro y consulta del historial de acciones |
 | `prisma` | Cliente Prisma y ciclo de vida de la conexión |
@@ -308,20 +316,20 @@ Reglas de integridad:
 ## 10. Notificaciones
 
 - Tipos: `D30` (16–30 días antes), `D15` (1–15 días antes), `DUE` (fecha de vencimiento) y `OVERDUE` (vencida).
-- Generación al iniciar la aplicación y tarea diaria a las 07:00 de Bogotá (`SCHEDULE_NOTIFICATIONS_CRON`); también es segura si se ejecuta varias veces.
+- Generación al iniciar la aplicación y tarea diaria a las 07:00 de Bogotá (`SCHEDULE_NOTIFICATIONS_CRON`); también es segura si se ejecuta varias veces. Este cron pertenece solo al seguimiento semestral.
 - Restricción única `(counterpartyId, type, scheduledDate)` para no duplicar alertas.
 - `scheduledDate` corresponde a la fecha de próximo seguimiento que originó la alerta.
 - Solo contrapartes `ACTIVE`; las archivadas se excluyen.
 - Las notificaciones son globales; el contador de no leídas y la marca de lectura son por usuario (`NotificationRead`).
-- La campana de la barra superior muestra el contador y el listado; consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a la contraparte.
+- La campana de **seguimiento** de la barra superior muestra su contador y listado; consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a `/contrapartes/:id`. No mezcla alertas anuales.
 
 ### Notificaciones anuales (independientes)
 
 - Tipos: `ANNUAL_D3` (3–2 días antes) y `ANNUAL_D1` (1–0 días antes). No se crean alertas nuevas para fechas vencidas.
 - Solo contrapartes anuales `ACTIVE` con `filingDate` desde el año anterior (`currentYear - 1`; 2025 en este corte). La fecha límite es `filingDate + 1 año`, ajustando el 29 de febrero al 28.
-- Generación al iniciar la aplicación, tarea diaria separada y nueva generación tras confirmar la importación anual; `skipDuplicates` evita duplicados.
+- Generación al iniciar la aplicación, tarea diaria con `SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` (independiente de `SCHEDULE_NOTIFICATIONS_CRON`) y nueva generación tras confirmar la importación anual; `skipDuplicates` evita duplicados.
 - `GET /annual-notifications` y `PATCH /annual-notifications/:id/read` usan `AnnualNotification` y `AnnualNotificationRead`, sin mezclarse con `Notification`/`NotificationRead`.
-- La campana fusiona ambos orígenes por fecha de creación, suma los contadores no leídos y dirige las alertas anuales a `/actualizacion-anual?code=...`.
+- La campana de **actualización anual** está al lado de la de seguimiento en el encabezado y mantiene su propio contador y listado; dirige cada alerta a `/actualizacion-anual?code=...`. No existe una página de alertas separada. La tabla de vencimientos de `/actualizacion-anual` no muestra una columna **Alerta** calculada: esa información vive solo en las alertas persistentes.
 
 ## 11. Importación Excel
 
@@ -348,7 +356,7 @@ Reglas de integridad:
 
 ## 12. API
 
-Prefijo `/api`. API implementada: autenticación y usuarios (`POST /auth/login`, `GET /auth/me`, `GET/POST /users`, `PATCH /users/:id`, `PATCH /users/:id/status`), subprocesos (`GET/POST/PATCH /subprocesses`), contrapartes (`GET /counterparties`, `GET /counterparties/:id`, `POST /counterparties`, `PATCH /counterparties/:id`, `POST /counterparties/:id/archive`, `POST /counterparties/:id/reactivate`), seguimientos (`GET/POST /counterparties/:id/follow-ups`, `PATCH /follow-ups/:id`, `POST /follow-ups/:id/finalize`), documentos (`POST /follow-ups/:id/documents`, `GET /documents/:id/download`), notificaciones (`GET /notifications`, `PATCH /notifications/:id/read`), importaciones (`POST /imports/upload`, `GET /imports`, `GET /imports/:id`, `POST /imports/:id/preview`, `POST /imports/:id/confirm`), actualización anual (`GET /annual-updates/summary`, `GET /annual-updates`, `GET /annual-updates/updates-due`, `POST /annual-updates/import/preview`, `POST /annual-updates/import/confirm`), notificaciones anuales (`GET /annual-notifications`, `PATCH /annual-notifications/:id/read`), dashboard (`GET /dashboard/summary`, `GET /dashboard/attention`) y auditoría (`GET /audit`). Todas las rutas salvo el login requieren JWT.
+Prefijo `/api`. API implementada: autenticación y usuarios (`POST /auth/login`, `GET /auth/me`, `GET/POST /users`, `PATCH /users/:id`, `PATCH /users/:id/status`), subprocesos (`GET/POST/PATCH /subprocesses`), contrapartes (`GET /counterparties`, `GET /counterparties/:id`, `POST /counterparties`, `PATCH /counterparties/:id`, `POST /counterparties/:id/archive`, `POST /counterparties/:id/reactivate`), seguimientos (`GET/POST /counterparties/:id/follow-ups`, `PATCH /follow-ups/:id`, `POST /follow-ups/:id/finalize`), documentos (`POST /follow-ups/:id/documents`, `GET /documents/:id/download`), notificaciones (`GET /notifications`, `PATCH /notifications/:id/read`), importaciones (`POST /imports/upload`, `GET /imports`, `GET /imports/:id`, `POST /imports/:id/preview`, `POST /imports/:id/confirm`), actualización anual (`GET /annual-updates/summary`, `GET /annual-updates`, `GET /annual-updates/updates-due`, `POST /annual-updates/import/preview`, `POST /annual-updates/import/confirm`), notificaciones anuales (`GET /annual-notifications`, `PATCH /annual-notifications/:id/read`), sincronización de workbooks (`POST /counterparties/sync-arriendos`, `POST /counterparties/sync-colocadores`, `POST /counterparties/sync-clientes`), datos externos (`/api/external-data/*` y `/api/external-data/clientes/*`), dashboard (`GET /dashboard/summary`, `GET /dashboard/attention`) y auditoría (`GET /audit`). Todas las rutas salvo el login y el webhook de Graph requieren JWT.
 
 | Método y ruta | Rol | Uso |
 |---|---|---|
@@ -382,6 +390,11 @@ Prefijo `/api`. API implementada: autenticación y usuarios (`POST /auth/login`,
 | `GET /annual-updates/updates-due` | Auth | Vencidas, de hoy, próximas y sin fecha |
 | `POST /annual-updates/import/preview` | ADMIN | Mapear y validar base anual |
 | `POST /annual-updates/import/confirm` | ADMIN | Confirmar base anual |
+| `POST /counterparties/sync-arriendos` | ADMIN | Importar seguimiento desde FR-SG-79 |
+| `POST /counterparties/sync-colocadores` | ADMIN | Importar seguimiento desde FR-SG-81 |
+| `POST /counterparties/sync-clientes` | ADMIN | Importar seguimiento desde FR-SG-80 |
+| `GET/POST /external-data/*` | Auth | Snapshot, estado, reportes, refresh y SSE de Arriendos |
+| `GET/POST /external-data/clientes/*` | Auth | Snapshot, estado, reportes, refresh y SSE de Clientes |
 | `GET /dashboard/summary` | Auth | Indicadores |
 | `GET /dashboard/attention` | Auth | Contrapartes que requieren atención |
 | `GET /audit` | ADMIN | Historial de acciones |
@@ -430,7 +443,7 @@ Rutas implementadas: `/login`, `/` (dashboard), `/usuarios` (solo ADMIN), `/subp
 4. Archivar y reactivar: solo ADMIN.
 5. Umbrales: Vencido `< hoy`; Pendiente 0–15 días; Próximo 16–30 días; Al día `> 30 días`.
 6. Git instalado; Docker no instalado (se deja `docker-compose.yml` preparado).
-7. La actualización anual es un proceso independiente del seguimiento semestral: genera alertas anuales propias y usa código único de punto de venta; guarda fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones, y conserva la marca de seguimiento para consulta.
+7. La actualización anual es un proceso independiente del seguimiento semestral: genera alertas anuales propias con cron y campana propios, y usa código único de punto de venta; guarda fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones, y conserva la marca de seguimiento para consulta.
 
 ## 16. Definiciones pendientes de confirmación
 
