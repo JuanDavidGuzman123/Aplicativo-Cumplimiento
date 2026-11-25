@@ -439,7 +439,7 @@ function valueKey(value: unknown): string {
 
 function canonicalValue(value: unknown): unknown {
   if (value instanceof Date) {
-    return value.toISOString()
+    return Number.isNaN(value.getTime()) ? 'invalid-date' : value.toISOString()
   }
 
   if (Array.isArray(value)) {

@@ -14,6 +14,8 @@ import {
 } from '../common/utils/dates.js'
 import type { ArriendosWorkbookService } from '../external-data/arriendos-workbook.service.js'
 import type { ColocadoresWorkbookService } from '../external-data/colocadores-workbook.service.js'
+import type { ClientesWorkbookService } from '../external-data/clientes-workbook.service.js'
+import type { ProveedoresWorkbookService } from '../external-data/proveedores-workbook.service.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { CounterpartiesService } from './counterparties.service.js'
 
@@ -89,6 +91,8 @@ describe('CounterpartiesService.evaluateRisk', () => {
       audit as unknown as AuditService,
       arriendos as unknown as ArriendosWorkbookService,
       colocadores as unknown as ColocadoresWorkbookService,
+      { writeFollowUp: vi.fn() } as unknown as ClientesWorkbookService,
+      { writeFollowUp: vi.fn() } as unknown as ProveedoresWorkbookService,
     )
   })
 
@@ -166,6 +170,7 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Seguimiento semestral',
+      'A',
     )
     expect(prisma.$transaction).toHaveBeenCalled()
     expect(colocadores.writeFollowUp).not.toHaveBeenCalled()
@@ -199,6 +204,7 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Seguimiento semestral',
+      'A',
     )
     expect(arriendos.writeFollowUp).not.toHaveBeenCalled()
     expect(prisma.$transaction).toHaveBeenCalled()
@@ -237,12 +243,14 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Nueva observación',
+      'A',
     )
     expect(colocadores.writeFollowUp).toHaveBeenNthCalledWith(
       2,
       '9001234567',
       'No',
       'Observación anterior',
+      undefined,
     )
   })
 
@@ -279,12 +287,14 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Nueva observación',
+      'A',
     )
     expect(arriendos.writeFollowUp).toHaveBeenNthCalledWith(
       2,
       '9001234567',
       'No',
       'Observación anterior',
+      undefined,
     )
   })
 
@@ -375,6 +385,7 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Se reactiva',
+      'A',
     )
     expect(prisma.$transaction).toHaveBeenCalled()
   })
@@ -408,8 +419,43 @@ describe('CounterpartiesService.evaluateRisk', () => {
       '9001234567',
       'Si',
       'Se reactiva',
+      'A',
     )
     expect(arriendos.writeFollowUp).not.toHaveBeenCalled()
+    expect(prisma.$transaction).toHaveBeenCalled()
+  })
+
+  it('escribe No e Inactivo en FR-SG-79 al archivar una contraparte', async () => {
+    prisma.counterparty.findUnique
+      .mockResolvedValueOnce(
+        detailRow({ category: { key: 'ARRIENDOS' } }),
+      )
+      .mockResolvedValueOnce(
+        detailRow({
+          status: CounterpartyStatus.ARCHIVED,
+          category: { key: 'ARRIENDOS' },
+          archiveReason: 'Ya no presenta riesgo',
+        }),
+      )
+    prisma.riskEvaluation.findFirst.mockResolvedValue(null)
+    arriendos.writeFollowUp.mockResolvedValue({
+      followUp: 'Si',
+      observations: 'Seguimiento anterior',
+      status: 'A',
+    })
+
+    await service.archive(
+      'counterparty-1',
+      { reason: 'Ya no presenta riesgo' },
+      'user-1',
+    )
+
+    expect(arriendos.writeFollowUp).toHaveBeenCalledWith(
+      '9001234567',
+      'No',
+      'Ya no presenta riesgo',
+      'I',
+    )
     expect(prisma.$transaction).toHaveBeenCalled()
   })
 })
@@ -438,6 +484,8 @@ describe('CounterpartiesService.findAll', () => {
       { record: vi.fn() } as unknown as AuditService,
       { writeFollowUp: vi.fn() } as unknown as ArriendosWorkbookService,
       { writeFollowUp: vi.fn() } as unknown as ColocadoresWorkbookService,
+      { writeFollowUp: vi.fn() } as unknown as ClientesWorkbookService,
+      { writeFollowUp: vi.fn() } as unknown as ProveedoresWorkbookService,
     )
 
     await service.findAll({

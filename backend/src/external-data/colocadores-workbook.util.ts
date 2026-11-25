@@ -22,7 +22,13 @@ export const FIELD_ALIASES = {
   registrationDate: ['fecha debida diligencia', 'fecha de diligenciamiento'],
   followUp: ['seguimiento si no', 'seguimiento'],
   observations: ['observaciones'],
-  status: ['estado'],
+  status: [
+    'estado',
+    'activo a inactivos i',
+    'activo a inactivo i',
+    'activo inactivos i',
+    'activo inactivo i',
+  ],
   lastEvaluation: ['fecha ultima evaluacion', 'fecha última evaluación'],
   nextFollowUp: ['fecha proximo seguimiento', 'fecha próximo seguimiento'],
   decision: ['resultado evaluacion', 'resultado de evaluacion'],
@@ -31,7 +37,7 @@ export const FIELD_ALIASES = {
 
 export type FieldKey = keyof typeof FIELD_ALIASES
 
-export type WorkbookField = 'followUp' | 'observations'
+export type WorkbookField = 'followUp' | 'observations' | 'status'
 
 export type HeaderIndexes = Partial<Record<FieldKey, number>>
 
@@ -88,7 +94,7 @@ function valueToText(value: unknown): string {
   }
 
   if (value instanceof Date) {
-    return value.toISOString()
+    return Number.isNaN(value.getTime()) ? '' : value.toISOString()
   }
 
   if (Array.isArray(value)) {

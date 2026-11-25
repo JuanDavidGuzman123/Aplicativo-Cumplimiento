@@ -21,6 +21,7 @@ import {
 export type WorkbookFieldsSnapshot = {
   followUp: string
   observations: string
+  status?: string
 }
 
 @Injectable()
@@ -114,6 +115,7 @@ export class ColocadoresWorkbookWriterService {
   ): Promise<WorkbookFieldsSnapshot> {
     const followUp = fields.followUp
     const observations = fields.observations
+    const status = fields.status
 
     if (followUp === undefined) {
       throw new ServiceUnavailableException(
@@ -131,6 +133,7 @@ export class ColocadoresWorkbookWriterService {
       headers,
       FIELD_ALIASES.observations,
     )
+    const statusIndex = findHeaderIndex(headers, FIELD_ALIASES.status)
 
     if (
       documentIndex < 0 ||
@@ -139,6 +142,12 @@ export class ColocadoresWorkbookWriterService {
     ) {
       throw new ServiceUnavailableException(
         `No se encontraron Numero de documento, Seguimiento Si/No u Observaciones en ${label}`,
+      )
+    }
+
+    if (status !== undefined && statusIndex < 0) {
+      throw new ServiceUnavailableException(
+        `No se encontró la columna de Estado en ${label}`,
       )
     }
 
@@ -162,9 +171,14 @@ export class ColocadoresWorkbookWriterService {
       targetRow,
       observationsIndex + 1,
     )
-    const previous = {
+    const statusCell =
+      statusIndex >= 0
+        ? sheet.getCell(targetRow, statusIndex + 1)
+        : null
+    const previous: WorkbookFieldsSnapshot = {
       followUp: cellText(followUpCell),
       observations: cellText(observationsCell),
+      ...(statusCell ? { status: cellText(statusCell) } : {}),
     }
 
     if (cellText(followUpCell).toLowerCase() !== followUp.toLowerCase()) {
@@ -183,6 +197,17 @@ export class ColocadoresWorkbookWriterService {
           row: targetRow,
           column: observationsIndex + 1,
           value: observations,
+        })
+      }
+    }
+
+    if (status !== undefined && statusCell) {
+      if (cellText(statusCell).toUpperCase() !== status.toUpperCase()) {
+        changes.push({
+          worksheet: sheet.name,
+          row: targetRow,
+          column: statusIndex + 1,
+          value: status,
         })
       }
     }
@@ -267,7 +292,7 @@ export class ColocadoresWorkbookWriterService {
       if (error instanceof WorkbookSafetyError) {
         this.logger.error(error.message)
         throw new ServiceUnavailableException(
-          'No se guardó el libro porque la validación detectó cambios fuera de Seguimiento y Observaciones. El archivo original quedó intacto.',
+          'No se guardó el libro porque la validación detectó cambios fuera de Seguimiento, Observaciones y Estado. El archivo original quedó intacto.',
         )
       }
 

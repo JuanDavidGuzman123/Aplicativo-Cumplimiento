@@ -22,6 +22,7 @@ export class ClientesWorkbookService {
     document: string,
     followUp: string,
     observations: string,
+    status?: string,
   ): Promise<WorkbookFieldsSnapshot> {
     if (!this.config.clientesReadConfigured) {
       throw new ServiceUnavailableException(
@@ -39,7 +40,7 @@ export class ClientesWorkbookService {
       this.config.clientesWorkbookPath,
       this.config.clientesWorksheetName,
       document,
-      { followUp, observations },
+      { followUp, observations, ...(status ? { status } : {}) },
       CLIENTES_WORKBOOK_LABEL,
     )
   }

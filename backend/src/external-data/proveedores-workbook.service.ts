@@ -22,6 +22,7 @@ export class ProveedoresWorkbookService {
     document: string,
     followUp: string,
     observations: string,
+    status?: string,
   ): Promise<WorkbookFieldsSnapshot> {
     if (!this.config.proveedoresReadConfigured) {
       throw new ServiceUnavailableException(
@@ -39,7 +40,7 @@ export class ProveedoresWorkbookService {
       this.config.proveedoresWorkbookPath,
       this.config.proveedoresWorksheetName,
       document,
-      { followUp, observations },
+      { followUp, observations, ...(status ? { status } : {}) },
       PROVEEDORES_WORKBOOK_LABEL,
     )
   }

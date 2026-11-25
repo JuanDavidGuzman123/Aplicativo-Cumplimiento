@@ -33,6 +33,7 @@ export type CounterpartySyncResult = {
   sourceRows: number
   followUpRows: number
   created: number
+  updated: number
   alreadyExisting: number
   skippedInvalid: number
 }
@@ -41,7 +42,12 @@ export type ArriendosSyncResult = CounterpartySyncResult
 
 type SyncSourceRow = Pick<
   ExternalAnnualRow,
-  'nit' | 'businessName' | 'filingDate' | 'status' | 'observations'
+  | 'nit'
+  | 'businessName'
+  | 'filingDate'
+  | 'status'
+  | 'observations'
+  | 'requiresSemiannualFollowUp'
 >
 
 type SyncOptions = {
@@ -81,7 +87,7 @@ export class CounterpartySyncService {
 
     const rows = this.externalData
       .getAllRows()
-      .filter((row) => row.requiresSemiannualFollowUp === true)
+      .filter((row) => row.requiresSemiannualFollowUp !== null)
     const followUpRows = rows.length
 
     return this.syncRows(actorId, {
@@ -145,15 +151,9 @@ export class CounterpartySyncService {
       )
     }
 
-    const rows = (await this.externalData.getClientesFollowUpRows())
-      .filter((row) => row.requiresSemiannualFollowUp !== null)
-      .map((row): ExternalAnnualRow => ({
-        ...row,
-        status:
-          row.requiresSemiannualFollowUp === true
-            ? 'ACTIVE'
-            : 'INACTIVE',
-      }))
+    const rows = (
+      await this.externalData.getClientesFollowUpRows()
+    ).filter((row) => row.requiresSemiannualFollowUp !== null)
     const followUpRows = rows.length
 
     return this.syncRows(actorId, {
@@ -184,7 +184,7 @@ export class CounterpartySyncService {
 
     const rows = this.externalData
       .getAllProveedoresRows()
-      .filter((row) => row.requiresSemiannualFollowUp === true)
+      .filter((row) => row.requiresSemiannualFollowUp !== null)
     const followUpRows = rows.length
 
     return this.syncRows(actorId, {
@@ -235,29 +235,93 @@ export class CounterpartySyncService {
     const nits = [...candidates.keys()]
     const existing = await this.prisma.counterparty.findMany({
       where: { nitNormalized: { in: nits } },
-      select: { nitNormalized: true },
+      select: {
+        id: true,
+        nitNormalized: true,
+        status: true,
+        archivedAt: true,
+        archivedById: true,
+        reactivatedAt: true,
+        reactivationReason: true,
+        riskEvaluations: { select: { id: true }, take: 1 },
+      },
     })
-    const existingNits = new Set(
-      existing.map((entry) => entry.nitNormalized),
+    const existingByNit = new Map(
+      existing.map((entry) => [entry.nitNormalized, entry]),
     )
     const toCreate = [...candidates.values()].filter(
-      (candidate) => !existingNits.has(candidate.nitNormalized),
+      (candidate) => !existingByNit.has(candidate.nitNormalized),
+    )
+    const toUpdate = [...candidates.values()].filter((candidate) =>
+      existingByNit.has(candidate.nitNormalized),
     )
 
-    const result = await this.prisma.counterparty.createMany({
-      data: toCreate.map((candidate) => ({
-        ...candidate,
-        categoryId,
-        subprocessId: subprocess.id,
-      })),
-      skipDuplicates: true,
-    })
+    const operations: Prisma.PrismaPromise<unknown>[] = []
+
+    if (toCreate.length > 0) {
+      operations.push(
+        this.prisma.counterparty.createMany({
+          data: toCreate.map((candidate) => ({
+            ...candidate,
+            categoryId,
+            subprocessId: subprocess.id,
+          })),
+          skipDuplicates: true,
+        }),
+      )
+    }
+
+    for (const candidate of toUpdate) {
+      const current = existingByNit.get(candidate.nitNormalized)!
+      const hasEvaluation = current.riskEvaluations.length > 0
+      const active = candidate.status === CounterpartyStatus.ACTIVE
+
+      operations.push(
+        this.prisma.counterparty.update({
+          where: { id: current.id },
+          data: {
+            nit: candidate.nit,
+            businessName: candidate.businessName,
+            observations: candidate.observations,
+            status: candidate.status,
+            registrationDate: candidate.registrationDate,
+            lastFollowUpDate: candidate.lastFollowUpDate,
+            ...(hasEvaluation && candidate.nextFollowUpDate
+              ? {}
+              : { nextFollowUpDate: candidate.nextFollowUpDate }),
+            ...(active
+              ? {
+                  archivedAt: null,
+                  archivedById: null,
+                  archiveReason: null,
+                  ...(current.status === CounterpartyStatus.ARCHIVED
+                    ? {
+                        reactivatedAt: new Date(),
+                        reactivationReason:
+                          'Reactivado desde el libro externo',
+                      }
+                    : {}),
+                }
+              : {
+                  archivedAt: current.archivedAt ?? new Date(),
+                  archivedById: current.archivedById ?? actorId,
+                  archiveReason: candidate.archiveReason,
+                }),
+          },
+        }),
+      )
+    }
+
+    if (operations.length > 0) {
+      await this.prisma.$transaction(operations)
+    }
 
     const summary: CounterpartySyncResult = {
       sourceRows: options.sourceRows,
       followUpRows: options.followUpRows,
-      created: result.count,
-      alreadyExisting: existingNits.size,
+      created: toCreate.length,
+      updated: toUpdate.length,
+      alreadyExisting: existingByNit.size,
       skippedInvalid,
     }
 
@@ -290,6 +354,12 @@ export class CounterpartySyncService {
     const filingDate = row.filingDate
       ? parseDateOnly(row.filingDate)
       : getBusinessToday()
+    const requiresFollowUp =
+      row.requiresSemiannualFollowUp === true
+    const status =
+      row.status === 'ACTIVE' && requiresFollowUp
+        ? CounterpartyStatus.ACTIVE
+        : CounterpartyStatus.ARCHIVED
 
     return {
       ...(preserveWorkbookIds
@@ -304,16 +374,15 @@ export class CounterpartySyncService {
       nitNormalized,
       businessName: row.businessName.trim(),
       observations: row.observations?.trim() || null,
-      status:
-        row.status === 'ACTIVE'
-          ? CounterpartyStatus.ACTIVE
-          : CounterpartyStatus.ARCHIVED,
+      status,
       registrationDate: filingDate,
       lastFollowUpDate: filingDate,
-      nextFollowUpDate: addMonths(filingDate, 6),
+      nextFollowUpDate: requiresFollowUp
+        ? addMonths(filingDate, 6)
+        : null,
       archiveReason:
-        row.status === 'INACTIVE'
-          ? `Registrado como inactivo en ${sourceName}`
+        status === CounterpartyStatus.ARCHIVED
+          ? `Registrado sin seguimiento semestral en ${sourceName}`
           : null,
     }
   }

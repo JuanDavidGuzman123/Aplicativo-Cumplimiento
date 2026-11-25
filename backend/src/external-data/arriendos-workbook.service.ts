@@ -21,6 +21,7 @@ export class ArriendosWorkbookService {
     document: string,
     followUp: string,
     observations: string,
+    status?: string,
   ): Promise<WorkbookFieldsSnapshot> {
     if (!this.config.enabled || !this.config.localWorkbookPath) {
       throw new ServiceUnavailableException(
@@ -38,7 +39,7 @@ export class ArriendosWorkbookService {
       this.config.localWorkbookPath,
       this.config.worksheetName || ARRIENDOS_WORKBOOK_LABEL,
       document,
-      { followUp, observations },
+      { followUp, observations, ...(status ? { status } : {}) },
       ARRIENDOS_WORKBOOK_LABEL,
     )
   }

@@ -32,7 +32,12 @@ function row(
 
 describe('CounterpartySyncService', () => {
   let prisma: {
-    counterparty: { findMany: ReturnType<typeof vi.fn>; createMany: ReturnType<typeof vi.fn> }
+    $transaction: ReturnType<typeof vi.fn>
+    counterparty: {
+      findMany: ReturnType<typeof vi.fn>
+      createMany: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+    }
     subprocess: { upsert: ReturnType<typeof vi.fn> }
   }
   let externalData: {
@@ -48,9 +53,11 @@ describe('CounterpartySyncService', () => {
 
   beforeEach(() => {
     prisma = {
+      $transaction: vi.fn((calls: Promise<unknown>[]) => Promise.all(calls)),
       counterparty: {
         findMany: vi.fn().mockResolvedValue([]),
         createMany: vi.fn().mockResolvedValue({ count: 0 }),
+        update: vi.fn().mockResolvedValue({}),
       },
       subprocess: {
         upsert: vi.fn().mockResolvedValue({ id: 'subprocess-1' }),
@@ -73,16 +80,17 @@ describe('CounterpartySyncService', () => {
     )
   })
 
-  it('importa de FR-SG-79 solo las filas marcadas para seguimiento', async () => {
+  it('importa de FR-SG-79 las filas con seguimiento y sin seguimiento', async () => {
     externalData.getAllRows.mockReturnValue([
       row({ id: 'a', nit: '1234567' }),
       row({
         id: 'b',
         nit: '7654321',
         requiresSemiannualFollowUp: false,
+        status: 'INACTIVE',
       }),
     ])
-    prisma.counterparty.createMany.mockResolvedValue({ count: 1 })
+    prisma.counterparty.createMany.mockResolvedValue({ count: 2 })
 
     const result = await service.syncArriendos('user-1')
 
@@ -91,13 +99,19 @@ describe('CounterpartySyncService', () => {
     )
     expect(prisma.counterparty.createMany).toHaveBeenCalledTimes(1)
     const data = prisma.counterparty.createMany.mock.calls[0][0].data
-    expect(data).toHaveLength(1)
+    expect(data).toHaveLength(2)
     expect(data[0].nit).toBe('1234567')
+    expect(data[0].nextFollowUpDate).toEqual(
+      new Date('2026-07-15T00:00:00.000Z'),
+    )
+    expect(data[1].status).toBe('ARCHIVED')
+    expect(data[1].nextFollowUpDate).toBeNull()
     expect(data[0]).not.toHaveProperty('id')
     expect(result).toEqual({
       sourceRows: 3,
-      followUpRows: 1,
-      created: 1,
+      followUpRows: 2,
+      created: 2,
+      updated: 0,
       alreadyExisting: 0,
       skippedInvalid: 0,
     })
@@ -134,6 +148,7 @@ describe('CounterpartySyncService', () => {
       sourceRows: 3,
       followUpRows: 2,
       created: 2,
+      updated: 0,
       alreadyExisting: 0,
       skippedInvalid: 0,
     })
@@ -172,6 +187,7 @@ describe('CounterpartySyncService', () => {
       sourceRows: 3,
       followUpRows: 2,
       created: 2,
+      updated: 0,
       alreadyExisting: 0,
       skippedInvalid: 0,
     })
@@ -182,16 +198,17 @@ describe('CounterpartySyncService', () => {
     )
   })
 
-  it('importa de FR-SG-83 solo las filas marcadas para seguimiento', async () => {
+  it('importa de FR-SG-83 las filas con seguimiento y sin seguimiento', async () => {
     externalData.getAllProveedoresRows.mockReturnValue([
       row({ id: 'a', nit: '1234567' }),
       row({
         id: 'b',
         nit: '7654321',
         requiresSemiannualFollowUp: false,
+        status: 'INACTIVE',
       }),
     ])
-    prisma.counterparty.createMany.mockResolvedValue({ count: 1 })
+    prisma.counterparty.createMany.mockResolvedValue({ count: 2 })
 
     const result = await service.syncProveedores('user-1')
 
@@ -202,16 +219,19 @@ describe('CounterpartySyncService', () => {
     expect(categories.resolveId).toHaveBeenCalledWith('PROVEEDORES')
     expect(prisma.counterparty.createMany).toHaveBeenCalledTimes(1)
     const data = prisma.counterparty.createMany.mock.calls[0][0].data
-    expect(data).toHaveLength(1)
+    expect(data).toHaveLength(2)
     expect(data[0].nit).toBe('1234567')
     expect(data[0].nextFollowUpDate).toEqual(
       new Date('2026-07-15T00:00:00.000Z'),
     )
+    expect(data[1].status).toBe('ARCHIVED')
+    expect(data[1].nextFollowUpDate).toBeNull()
     expect(data[0]).not.toHaveProperty('id')
     expect(result).toEqual({
       sourceRows: 3,
-      followUpRows: 1,
-      created: 1,
+      followUpRows: 2,
+      created: 2,
+      updated: 0,
       alreadyExisting: 0,
       skippedInvalid: 0,
     })
@@ -220,5 +240,52 @@ describe('CounterpartySyncService', () => {
         action: 'SYNC_PROVEEDORES_COUNTERPARTIES',
       }),
     )
+  })
+
+  it('actualiza contrapartes existentes desde el libro externo', async () => {
+    externalData.getAllRows.mockReturnValue([
+      row({
+        id: 'a',
+        nit: '1234567',
+        businessName: 'Nombre actualizado en Excel',
+        status: 'INACTIVE',
+        requiresSemiannualFollowUp: false,
+        observations: 'Observación desde Excel',
+      }),
+    ])
+    prisma.counterparty.findMany.mockResolvedValueOnce([
+      {
+        id: 'existing-1',
+        nitNormalized: '1234567',
+        status: 'ACTIVE',
+        archivedAt: null,
+        archivedById: null,
+        reactivatedAt: null,
+        reactivationReason: null,
+        riskEvaluations: [],
+      },
+    ])
+
+    const result = await service.syncArriendos('user-1')
+
+    expect(prisma.counterparty.createMany).not.toHaveBeenCalled()
+    expect(prisma.counterparty.update).toHaveBeenCalledWith({
+      where: { id: 'existing-1' },
+      data: expect.objectContaining({
+        nit: '1234567',
+        businessName: 'Nombre actualizado en Excel',
+        observations: 'Observación desde Excel',
+        status: 'ARCHIVED',
+        nextFollowUpDate: null,
+      }),
+    })
+    expect(result).toEqual({
+      sourceRows: 3,
+      followUpRows: 1,
+      created: 0,
+      updated: 1,
+      alreadyExisting: 1,
+      skippedInvalid: 0,
+    })
   })
 })

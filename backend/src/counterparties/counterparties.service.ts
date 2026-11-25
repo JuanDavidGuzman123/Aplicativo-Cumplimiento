@@ -49,7 +49,12 @@ type FollowUpWorkbook = {
     document: string,
     followUp: string,
     observations: string,
+    status?: string,
   ): Promise<WorkbookFieldsSnapshot>
+}
+
+function toWorkbookStatus(status: CounterpartyStatus): string {
+  return status === CounterpartyStatus.ACTIVE ? 'A' : 'I'
 }
 
 const listSelect = {
@@ -428,11 +433,17 @@ export class CounterpartiesService {
 
     const categoryKey = current.category?.key
     const workbook = this.workbookFor(categoryKey)
+    const workbookStatus = toWorkbookStatus(
+      dto.decision === RiskDecision.CONTINUE
+        ? CounterpartyStatus.ACTIVE
+        : CounterpartyStatus.ARCHIVED,
+    )
     const workbookSnapshot = workbook
       ? await workbook.writeFollowUp(
           current.nit,
           dto.decision === RiskDecision.CONTINUE ? 'Si' : 'No',
           notes ?? '',
+          workbookStatus,
         )
       : null
 
@@ -512,6 +523,7 @@ export class CounterpartiesService {
         nit: true,
         businessName: true,
         status: true,
+        category: { select: { key: true } },
       },
     })
 
@@ -523,18 +535,40 @@ export class CounterpartiesService {
       throw new BadRequestException('La contraparte ya está archivada')
     }
 
-    await this.prisma.counterparty.update({
-      where: { id },
-      data: {
-        status: CounterpartyStatus.ARCHIVED,
-        archivedAt: new Date(),
-        archivedById: actorId,
-        archiveReason: dto.reason,
-        reactivatedAt: null,
-        reactivatedById: null,
-        reactivationReason: null,
-      },
-    })
+    const categoryKey = current.category?.key
+    const workbook = this.workbookFor(categoryKey)
+    const workbookSnapshot = workbook
+      ? await workbook.writeFollowUp(
+          current.nit,
+          'No',
+          dto.reason,
+          toWorkbookStatus(CounterpartyStatus.ARCHIVED),
+        )
+      : null
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.counterparty.update({
+          where: { id },
+          data: {
+            status: CounterpartyStatus.ARCHIVED,
+            archivedAt: new Date(),
+            archivedById: actorId,
+            archiveReason: dto.reason,
+            reactivatedAt: null,
+            reactivatedById: null,
+            reactivationReason: null,
+          },
+        }),
+      ])
+    } catch (error) {
+      await this.restoreWorkbook(
+        current.nit,
+        categoryKey,
+        workbookSnapshot,
+      )
+      throw error
+    }
 
     await this.audit.record({
       userId: actorId,
@@ -583,7 +617,12 @@ export class CounterpartiesService {
     const categoryKey = current.category?.key
     const workbook = this.workbookFor(categoryKey)
     const workbookSnapshot = workbook
-      ? await workbook.writeFollowUp(current.nit, 'Si', dto.reason)
+      ? await workbook.writeFollowUp(
+          current.nit,
+          'Si',
+          dto.reason,
+          toWorkbookStatus(CounterpartyStatus.ACTIVE),
+        )
       : null
 
     try {
@@ -673,6 +712,7 @@ export class CounterpartiesService {
         nit,
         snapshot.followUp,
         snapshot.observations,
+        snapshot.status,
       )
     } catch (error) {
       this.logger.error(

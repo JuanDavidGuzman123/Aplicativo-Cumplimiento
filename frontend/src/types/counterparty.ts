@@ -126,6 +126,7 @@ export type CounterpartySyncResult = {
   sourceRows: number
   followUpRows: number
   created: number
+  updated: number
   alreadyExisting: number
   skippedInvalid: number
 }

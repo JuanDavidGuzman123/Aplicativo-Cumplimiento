@@ -607,7 +607,7 @@ export function CounterpartiesPage() {
     try {
       const result = await syncArriendosFromExternal()
       showToast(
-        `Sincronización completada: ${result.created} nuevas contrapartes de Arriendos, ${result.alreadyExisting} ya existían.`,
+        `Sincronización completada: ${result.created} nuevas contrapartes de Arriendos, ${result.updated} actualizadas, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
     } catch (syncError) {
@@ -633,7 +633,7 @@ export function CounterpartiesPage() {
     try {
       const result = await syncColocadoresFromExternal()
       showToast(
-        `Sincronización completada: ${result.created} nuevas contrapartes de Colocadores independientes, ${result.alreadyExisting} ya existían.`,
+        `Sincronización completada: ${result.created} nuevas contrapartes de Colocadores independientes, ${result.updated} actualizadas, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
     } catch (syncError) {
@@ -659,7 +659,7 @@ export function CounterpartiesPage() {
     try {
       const result = await syncClientesFromExternal()
       showToast(
-        `Sincronización completada: ${result.created} nuevas contrapartes de Clientes, ${result.alreadyExisting} ya existían.`,
+        `Sincronización completada: ${result.created} nuevas contrapartes de Clientes, ${result.updated} actualizadas, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
     } catch (syncError) {
@@ -685,7 +685,7 @@ export function CounterpartiesPage() {
     try {
       const result = await syncProveedoresFromExternal()
       showToast(
-        `Sincronización completada: ${result.created} nuevas contrapartes de Proveedores, ${result.alreadyExisting} ya existían.`,
+        `Sincronización completada: ${result.created} nuevas contrapartes de Proveedores, ${result.updated} actualizadas, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
     } catch (syncError) {

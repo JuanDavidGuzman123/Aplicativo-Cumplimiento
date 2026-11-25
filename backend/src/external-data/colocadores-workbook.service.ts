@@ -92,6 +92,7 @@ export class ColocadoresWorkbookService {
     document: string,
     followUp: string,
     observations: string,
+    _status?: string,
   ): Promise<WorkbookFieldsSnapshot> {
     if (!this.config.colocadoresReadConfigured) {
       throw new ServiceUnavailableException(

@@ -80,6 +80,49 @@ describe('ColocadoresWorkbookWriterService', () => {
     expect(sheet?.rowCount).toBe(4)
   })
 
+  it('escribe Estado sin tocar otras celdas', async () => {
+    const statusPath = join(directory, 'FR-SG-83.xlsx')
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('FR-SG-83')
+
+    sheet.getCell(3, 1).value = 'Nit o numero de documento'
+    sheet.getCell(3, 5).value = 'Activo (A)\nInactivos (I)'
+    sheet.getCell(3, 16).value = 'Seguimiento Si / No'
+    sheet.getCell(3, 17).value = 'Observaciones'
+    sheet.getCell(4, 1).value = '9001234567'
+    sheet.getCell(4, 5).value = 'A'
+    sheet.getCell(4, 16).value = 'Si'
+    sheet.getCell(4, 17).value = 'Seguimiento anterior'
+    sheet.getCell(4, 18).value = 'No se debe tocar'
+    await workbook.xlsx.writeFile(statusPath)
+
+    const previous = await writer.writeFieldsByDocument(
+      statusPath,
+      'FR-SG-83',
+      '9001234567',
+      {
+        followUp: 'No',
+        observations: 'Archivado desde la app',
+        status: 'I',
+      },
+      'FR-SG-83',
+    )
+
+    const saved = new ExcelJS.Workbook()
+    await saved.xlsx.readFile(statusPath)
+    const savedSheet = saved.getWorksheet('FR-SG-83')
+
+    expect(previous).toEqual({
+      followUp: 'Si',
+      observations: 'Seguimiento anterior',
+      status: 'A',
+    })
+    expect(savedSheet?.getCell(4, 5).value).toBe('I')
+    expect(savedSheet?.getCell(4, 16).value).toBe('No')
+    expect(savedSheet?.getCell(4, 17).value).toBe('Archivado desde la app')
+    expect(savedSheet?.getCell(4, 18).value).toBe('No se debe tocar')
+  })
+
   it('actualiza FR-SG-79 por documento sin tocar otras celdas', async () => {
     const arriendosPath = join(directory, 'FR-SG-79.xlsx')
     const workbook = new ExcelJS.Workbook()
