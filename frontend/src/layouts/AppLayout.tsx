@@ -14,8 +14,7 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { roleLabels } from '../utils/labels'
-import { AnnualNotificationBell } from '../components/AnnualNotificationBell'
-import { NotificationBell } from '../components/NotificationBell'
+import { AlertCenter } from '../components/AlertCenter'
 
 type NavItem = {
   to: string
@@ -136,8 +135,7 @@ export function AppLayout() {
           </button>
 
           <div className="ml-auto flex items-center gap-4">
-            <NotificationBell />
-            <AnnualNotificationBell />
+            <AlertCenter />
             <div className="text-right">
               <p className="text-sm font-medium text-slate-900">{user?.name}</p>
               <p className="text-xs text-slate-500">

@@ -59,17 +59,29 @@ const DUE_PAGE_SIZE = 10
 
 const sourceCopy: Record<
   ExternalSource,
-  { title: string; description: string }
+  {
+    title: string
+    description: string
+    entity: string
+    entityLower: string
+    followUpLabel: string
+  }
 > = {
   arriendos: {
     title: 'Actualizacion Anual Arriendos',
     description:
       'Consulte el estado de la actualización anual de los puntos de venta y sus vencimientos desde el libro externo. Este proceso es independiente del seguimiento semestral.',
+    entity: 'Puntos de venta',
+    entityLower: 'puntos de venta',
+    followUpLabel: 'Contrapartes en seguimiento',
   },
   clientes: {
     title: 'Actualizacion Anual Clientes',
     description:
       'Consulte el estado de la actualización anual de los clientes corporativos y sus vencimientos desde FR-SG-80. El seguimiento semestral se gestiona por separado.',
+    entity: 'Clientes',
+    entityLower: 'clientes',
+    followUpLabel: 'Clientes en seguimiento',
   },
 }
 
@@ -324,7 +336,7 @@ export function AnnualUpdatesPage({
           setListError(
             getApiErrorMessage(
               loadError,
-              'No fue posible cargar los puntos de venta anuales externos',
+              `No fue posible cargar los ${pageCopy.entityLower} anuales externos`,
             ),
           )
         }
@@ -338,7 +350,13 @@ export function AnnualUpdatesPage({
     return () => {
       active = false
     }
-  }, [effectiveListParams, listRefreshKey, setExternalStatus, source])
+  }, [
+    effectiveListParams,
+    listRefreshKey,
+    pageCopy.entityLower,
+    setExternalStatus,
+    source,
+  ])
 
   useEffect(() => {
     let active = true
@@ -414,7 +432,7 @@ export function AnnualUpdatesPage({
   const statCards: StatCard[] = summary
     ? [
         {
-          label: 'Puntos de venta activos',
+          label: `${pageCopy.entity} activos`,
           value: summary.totals.active,
           hint: `${summary.totals.inactive} inactivos`,
           icon: Building2,
@@ -422,7 +440,7 @@ export function AnnualUpdatesPage({
           reports: ['active'],
         },
         {
-          label: 'Puntos de venta inactivos',
+          label: `${pageCopy.entity} inactivos`,
           value: summary.totals.inactive,
           hint: 'Solo para conteo',
           icon: Ban,
@@ -446,7 +464,7 @@ export function AnnualUpdatesPage({
             reports: ['pending-active'],
           },
         {
-          label: 'Contrapartes en seguimiento',
+          label: pageCopy.followUpLabel,
           value: summary.semiannual.totalWithFollowUp,
           hint: `${summary.semiannual.activeWithFollowUp} activos / ${summary.semiannual.inactiveWithFollowUp} inactivos`,
           icon: Users,
@@ -639,9 +657,10 @@ export function AnnualUpdatesPage({
               {summary.currentYear}
             </p>
             <p className="mt-1 text-xs">
-              Los puntos de venta inactivos se incluyen únicamente en
-              los conteos. Los pendientes corresponden a puntos de
-              venta activos sin actualización registrada en el año.
+              Los {pageCopy.entityLower} inactivos se incluyen
+              únicamente en los conteos. Los pendientes corresponden a{' '}
+              {pageCopy.entityLower} activos sin actualización registrada
+              en el año.
             </p>
           </div>
         )}
@@ -655,7 +674,7 @@ export function AnnualUpdatesPage({
             </span>
             <div>
               <h2 className="text-base font-semibold text-slate-900">
-                Puntos de venta anuales
+                {pageCopy.entity} anuales
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 Consulte el estado anual y el seguimiento registrado
@@ -806,13 +825,13 @@ export function AnnualUpdatesPage({
         {listLoading && !list ? (
           <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
             <Loader2 className="size-4 animate-spin" />
-            Cargando puntos de venta...
+            Cargando {pageCopy.entityLower}...
           </div>
         ) : !list || list.data.length === 0 ? (
           <div className="p-10 text-center">
             <AlertTriangle className="mx-auto size-8 text-amber-500" />
             <p className="mt-3 text-sm font-medium text-slate-700">
-              No hay puntos de venta para mostrar
+              No hay {pageCopy.entityLower} para mostrar
             </p>
             <p className="mt-1 text-sm text-slate-500">
               Verifique la configuración y sincronización del libro

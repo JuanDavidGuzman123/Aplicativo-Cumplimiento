@@ -95,22 +95,25 @@ Organizar **Contrapartes en seguimiento** en categorías escalables, empezando p
 ## 4. Independencia total de alertas
 
 ### Objetivo
-Separar por completo la alerta de actualización anual de arriendos de la alerta de seguimiento semestral de contrapartes, sin mezclar contadores, marcas de lectura, navegación ni programación.
+Mantener independientes la alerta de actualización anual y la alerta de seguimiento semestral de contrapartes, sin mezclar contadores, marcas de lectura, navegación ni programación, y presentarlas en un solo centro de alertas fácil de leer.
 
 ### Estado
-**Implementado** el 24/11/2026: dos campanas juntas en el encabezado, tipos y servicios separados en el frontend, cron `SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` independiente de `SCHEDULE_NOTIFICATIONS_CRON`, y sin columna **Alerta** calculada en la tabla de vencimientos de Actualización anual. No se creó una página de alertas separada.
+**Implementado** el 25/11/2026: una campana `Alertas` en el encabezado con pestañas `Todas`, `Seguimiento` y `Anual`; secciones por estado real (`Vencida`, `Por vencer`, `Pendiente`) con subdivisión por proceso/categoría, incluidos los tres procesos de seguimiento; una sola tarjeta por obligación con trazabilidad de recordatorios; metadata `process` y `source` en la API; endpoints, modelos y crons separados (`SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` y `SCHEDULE_NOTIFICATIONS_CRON`); y sin columna **Alerta** calculada en la tabla de vencimientos de Actualización anual. No se creó una página de alertas separada.
 
 ### Reglas funcionales
-- La campana de seguimiento solo consulta `/api/notifications`, marca `/api/notifications/:id/read` y navega a `/contrapartes/:id`.
-- La campana de actualización anual solo consulta `/api/annual-notifications`, marca `/api/annual-notifications/:id/read` y navega a `/actualizacion-anual?code=...` para Arriendos o a `/actualizacion-anual/clientes?code=...` para Clientes.
-- Marcar como leída una alerta de una familia no modifica el contador de la otra.
+- El centro de alertas consulta `/api/notifications` y `/api/annual-notifications`; cada alerta se identifica por `process` (`FOLLOW_UP` o `ANNUAL`) y `source` (`arriendos`, `colocadores` o `clientes`).
+- La UI calcula el estado desde `scheduledDate` y la fecha actual de Bogotá: vencida si pasó, por vencer si faltan 15 días o menos, y pendiente en adelante. Muestra días de retraso o restantes y conserva los recordatorios originales como trazabilidad.
+- Los recordatorios de una misma obligación se agrupan para mostrar una sola alerta activa. Las notificaciones cuya `scheduledDate` ya no coincide con la fecha vigente del registro no se muestran como activas, por lo que los recordatorios se detienen al completar la actividad sin borrar el historial.
+- Las alertas de seguimiento marcan `/api/notifications/:id/read` y navegan a `/contrapartes/:id`.
+- Las alertas anuales marcan `/api/annual-notifications/:id/read` y navegan a `/actualizacion-anual?code=...` para Arriendos o a `/actualizacion-anual/clientes?code=...` para Clientes.
+- Marcar como leída una alerta de una familia o fuente no modifica los contadores de las demás ni completa la obligación; el cumplimiento solo cambia cuando se registra la actividad en el módulo correspondiente.
 - La generación diaria de cada familia usa su propia variable de entorno cron; ambas conservan la zona `America/Bogota` y `skipDuplicates`.
 - Los tipos `ANNUAL_D15`, `ANNUAL_D10` y `ANNUAL_D5` se conservan solo para alertas históricas; no se generan alertas nuevas de esos tipos.
 - No se modifica PostgreSQL ni los workbooks; `Notification`/`AnnualNotification` ya estaban separados en la base.
 
 ### Validación
 - Verificar build, lint y tests de backend y frontend.
-- Verificar en la UI que cada campana tenga su contador, que la alerta anual abra `/actualizacion-anual?code=...` para Arriendos o `/actualizacion-anual/clientes?code=...` para Clientes, y que la tabla de vencimientos ya no muestre **Alerta**.
+- Verificar en la UI que el centro de alertas muestre contadores independientes, secciones por estado, una sola tarjeta por obligación, días restantes o de retraso y navegación correcta; que la alerta anual abra `/actualizacion-anual?code=...` para Arriendos o `/actualizacion-anual/clientes?code=...` para Clientes, y que la tabla de vencimientos ya no muestre **Alerta**.
 
 ## 7. Clientes corporativos
 
@@ -118,7 +121,7 @@ Separar por completo la alerta de actualización anual de arriendos de la alerta
 Gestionar para Clientes el mismo par de procesos que para Arriendos: actualización anual con alertas D3/D1 y seguimiento semestral con historial, sin mezclar códigos, notificaciones ni registros con Arriendos.
 
 ### Estado
-**Implementado** el 24/11/2026: ruta `/actualizacion-anual/clientes`, endpoints `/api/external-data/clientes/*`, `POST /counterparties/sync-clientes`, categoría `CLIENTES`, `AnnualCounterparty.source` con unique `(source, codeNormalized)`, notificaciones anuales por fuente y campana con navegación source-aware. Falta configurar `EXTERNAL_CLIENTES_WORKBOOK_PATH` en el entorno real; sin esa variable la fuente queda `unconfigured`.
+**Implementado** el 25/11/2026: ruta `/actualizacion-anual/clientes`, endpoints `/api/external-data/clientes/*`, `POST /counterparties/sync-clientes`, categoría `CLIENTES`, `AnnualCounterparty.source` con unique `(source, codeNormalized)`, notificaciones anuales por fuente con navegación source-aware y centro unificado de alertas con metadata `process`/`source`. El entorno local quedó configurado con `EXTERNAL_CLIENTES_WORKBOOK_PATH`; en el entorno real esa variable aún debe definirse, y sin ella la fuente queda `unconfigured`.
 
 ### Fuente confirmada
 - Carpeta: `W:\124 CUMPLIMIENTO\124. PE GI CUMPLIMIENTO\1. DEBIDA DILIGENCIA\4. Clientes corporativos`.
@@ -139,6 +142,6 @@ Gestionar para Clientes el mismo par de procesos que para Arriendos: actualizaci
 ### Fases
 1. **Configuración**: `EXTERNAL_CLIENTES_WORKBOOK_PATH`, `EXTERNAL_CLIENTES_WORKSHEET_NAME=FR-SG-80` y opcional `EXTERNAL_CLIENTES_COLUMN_MAP`.
 2. **Backend**: snapshot y endpoints por fuente, mapper con aliases FR-SG-80, sync a PostgreSQL y workbook writer.
-3. **Frontend**: tarjeta y menú de actualización anual de Clientes, botón **Traer de FR-SG-80** y campana source-aware.
+3. **Frontend**: tarjeta y menú de actualización anual de Clientes, botón **Traer de FR-SG-80** y centro de alertas source-aware.
 4. **Despliegue**: mounts de workbooks en `docker-compose.prod.yml`, variables en los `.env.example` y respaldo de `/app/workbooks` en `deploy/backup.sh`.
 5. **Validación**: tests de source, sync, aislamiento de snapshots y escritura segura; build/lint/test/e2e.

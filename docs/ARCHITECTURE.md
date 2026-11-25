@@ -32,7 +32,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - PostgreSQL 17.11 en `localhost:5432`, base `seguimiento_contrapartes`. Migración inicial `20261103215320_init` aplicada; las 9 tablas de negocio existen.
 - Configuración global con `ConfigModule` y validación de variables (`src/config/env.validation.ts`); `ValidationPipe` global; prefijo `/api`; Helmet; CORS restringido a `http://localhost:5173`.
 - `GET /api/health` ejecuta `SELECT 1` en PostgreSQL y responde `{ status: "ok", database: "connected" }`.
-- Frontend con Tailwind CSS v4, Axios, React Router, React Hook Form, Zod y Lucide. El frontend incluye login, layout autenticado, administración de usuarios, módulos de subprocesos y contrapartes, seguimientos, documentos, campana de notificaciones, importación de Excel, dashboard y auditoría.
+- Frontend con Tailwind CSS v4, Axios, React Router, React Hook Form, Zod y Lucide. El frontend incluye login, layout autenticado, administración de usuarios, módulos de subprocesos y contrapartes, seguimientos, documentos, centro de alertas, importación de Excel, dashboard y auditoría.
 - npm 11 exige aprobar los scripts de instalación de módulos nativos. Las aprobaciones de Prisma y bcrypt quedaron registradas en `allowScripts` de `backend/package.json` para que una instalación limpia funcione.
 - Variables reales en `backend/.env` y `frontend/.env`, excluidas de Git. Solo se versionan los `.env.example`.
 
@@ -76,7 +76,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - Se generan alertas solo para contrapartes `ACTIVE` con `nextFollowUpDate`: `D30` para 16–30 días, `D15` para 1–15 días, `DUE` para el día del vencimiento y `OVERDUE` para fechas pasadas.
 - La restricción única `(counterpartyId, type, scheduledDate)` impide duplicados cuando la tarea se repite o la aplicación se reinicia.
 - Las notificaciones son globales; cada usuario tiene su propio estado de lectura y contador mediante `NotificationRead`.
-- La campana de la barra superior consulta las alertas al iniciar, cada 60 segundos y al abrirse; muestra el contador, permite marcar como leída y navega a la contraparte.
+- El centro de alertas de la barra superior consulta las alertas al iniciar, cada 60 segundos y al abrirse; muestra contadores por familia, permite marcar como leída y navega a la contraparte o a la actualización anual correspondiente. Agrupa los recordatorios por obligación y los ordena por estado real: vencidas, próximas a vencer y pendientes; dentro de cada estado separa por proceso/categoría, incluidos Arriendos, Clientes y Colocadores independientes en seguimiento. La lectura no altera el cumplimiento.
 - Verificado con build/lint del backend y frontend y flujos reales contra la API: generación de los cuatro tipos, exclusión de archivadas, idempotencia tras reinicios, lectura por usuario y respuestas 401/404/400.
 
 ### Importación Excel (Fase 7)
@@ -138,7 +138,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - Clientes tiene su propio snapshot, estado, SSE y endpoints bajo `/external-data/clientes/*`, y pantalla `/actualizacion-anual/clientes`. El dedupe anual es por NIT/documento y el snapshot conserva la fila más reciente.
 - `POST /counterparties/sync-clientes` sincroniza a PostgreSQL solo las filas con `Seguimiento Si/No = Si` o `No` en la categoría `CLIENTES`: `Si` queda activa y `No` archivada. El ID derivado usa el prefijo `clientes-fr-sg-80` para no colisionar con Colocadores. No se agrega ninguna columna ni ID al libro.
 - La decisión inicial fue dejar `Seguimiento Si/No` vacío en `FR-SG-80`, por lo que el sync inicial es 0. Las evaluaciones y reactivaciones futuras escriben solo las celdas existentes `17 Seguimiento Si/No` y `18 Observaciones`, con el mismo guardado seguro de Arriendos y Colocadores, y registran el historial en `RiskEvaluation`.
-- `AnnualCounterparty.source` separa los registros anuales de Arriendos y Clientes. La unique compuesta `(source, codeNormalized)` permite que el mismo código exista en ambas fuentes; las alertas anuales y las notificaciones conservan `source` y navegan a la pantalla correspondiente.
+- `AnnualCounterparty.source` separa los registros anuales de Arriendos y Clientes. La unique compuesta `(source, codeNormalized)` permite que el mismo código exista en ambas fuentes; las alertas anuales y las notificaciones conservan `source` y `process`, y navegan a la pantalla correspondiente.
 
 ### Dashboard (Fase 8)
 
@@ -321,7 +321,7 @@ Reglas de integridad:
 - `scheduledDate` corresponde a la fecha de próximo seguimiento que originó la alerta.
 - Solo contrapartes `ACTIVE`; las archivadas se excluyen.
 - Las notificaciones son globales; el contador de no leídas y la marca de lectura son por usuario (`NotificationRead`).
-- La campana de **seguimiento** de la barra superior muestra su contador y listado; consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a `/contrapartes/:id`. No mezcla alertas anuales.
+- El centro de **alertas** de la barra superior agrupa el seguimiento semestral de Arriendos, Colocadores independientes y Clientes, además de la actualización anual. Consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a `/contrapartes/:id`. Cada alerta incluye `process: FOLLOW_UP`, `source: arriendos | colocadores | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y los recordatorios originales agrupados por obligación.
 
 ### Notificaciones anuales (independientes)
 
@@ -329,7 +329,7 @@ Reglas de integridad:
 - Solo contrapartes anuales `ACTIVE` con `filingDate` desde el año anterior (`currentYear - 1`; 2025 en este corte). La fecha límite es `filingDate + 1 año`, ajustando el 29 de febrero al 28.
 - Generación al iniciar la aplicación, tarea diaria con `SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` (independiente de `SCHEDULE_NOTIFICATIONS_CRON`) y nueva generación tras confirmar la importación anual; `skipDuplicates` evita duplicados.
 - `GET /annual-notifications` y `PATCH /annual-notifications/:id/read` usan `AnnualNotification` y `AnnualNotificationRead`, sin mezclarse con `Notification`/`NotificationRead`.
-- La campana de **actualización anual** está al lado de la de seguimiento en el encabezado y mantiene su propio contador y listado; dirige cada alerta a `/actualizacion-anual?code=...`. No existe una página de alertas separada. La tabla de vencimientos de `/actualizacion-anual` no muestra una columna **Alerta** calculada: esa información vive solo en las alertas persistentes.
+- La actualización anual aparece bajo la pestaña **Anual** del centro de **alertas**, con contadores y marcas de lectura independientes. Cada alerta incluye `process: ANNUAL` y `source: arriendos | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y dirige a `/actualizacion-anual?code=...` o `/actualizacion-anual/clientes?code=...`. No existe una página de alertas separada. La tabla de vencimientos de `/actualizacion-anual` no muestra una columna **Alerta** calculada: esa información vive solo en las alertas persistentes.
 
 ## 11. Importación Excel
 
@@ -418,7 +418,7 @@ Prefijo `/api`. API implementada: autenticación y usuarios (`POST /auth/login`,
 
 ## 14. Frontend
 
-Rutas implementadas: `/login`, `/` (dashboard), `/usuarios` (solo ADMIN), `/subprocesos` (solo ADMIN), `/importar` (solo ADMIN), `/auditoria` (solo ADMIN), `/contrapartes`, `/contrapartes/:id` y `/actualizacion-anual` (autenticados). Las notificaciones se consultan desde la campana de la barra superior; los seguimientos se gestionan dentro del detalle de la contraparte.
+Rutas implementadas: `/login`, `/` (dashboard), `/usuarios` (solo ADMIN), `/subprocesos` (solo ADMIN), `/importar` (solo ADMIN), `/auditoria` (solo ADMIN), `/contrapartes`, `/contrapartes/:id`, `/actualizacion-anual` y `/actualizacion-anual/clientes` (autenticados). Las notificaciones se consultan desde el centro de alertas de la barra superior; los seguimientos se gestionan dentro del detalle de la contraparte.
 
 - Login con correo y contraseña, cierre de sesión y restauración de la sesión desde el token.
 - El inicio muestra el dashboard con indicadores, tabla de contrapartes que requieren atención, resumen operativo, distribución del calendario y accesos rápidos. Los indicadores enlazan al listado con el filtro de calendario correspondiente.
@@ -428,7 +428,7 @@ Rutas implementadas: `/login`, `/` (dashboard), `/usuarios` (solo ADMIN), `/subp
 - En `/actualizacion-anual` se consultan los conteos anuales, el apartado de vencimientos y el listado filtrable; los ADMIN cargan la base, validan y confirman sin ajustar mapeo. La importación vuelve a generar los recordatorios anuales del día.
 - En `/auditoria` se consultan las acciones registradas con filtros por entidad, acción y usuario, paginación y detalle expandible.
 - Rutas protegidas; `/usuarios`, `/subprocesos`, `/importar` y `/auditoria` redirigen al inicio si el usuario no es ADMIN.
-- Layout autenticado con barra lateral, barra superior (campana de notificaciones, usuario y cierre de sesión) y menú según el rol.
+- Layout autenticado con barra lateral, barra superior (centro de alertas, usuario y cierre de sesión) y menú según el rol.
 - Componentes reutilizables: tabla, paginación, filtros, badges de estado, modal, diálogo de confirmación, toasts, estados vacíos y de carga.
 - Formularios con React Hook Form + Zod; los mismos campos se validan en el backend.
 - Axios con interceptor que adjunta el token y redirige al login ante `401`.
@@ -443,7 +443,7 @@ Rutas implementadas: `/login`, `/` (dashboard), `/usuarios` (solo ADMIN), `/subp
 4. Archivar y reactivar: solo ADMIN.
 5. Umbrales: Vencido `< hoy`; Pendiente 0–15 días; Próximo 16–30 días; Al día `> 30 días`.
 6. Git instalado; Docker no instalado (se deja `docker-compose.yml` preparado).
-7. La actualización anual es un proceso independiente del seguimiento semestral: genera alertas anuales propias con cron y campana propios, y usa código único de punto de venta; guarda fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones, y conserva la marca de seguimiento para consulta.
+7. La actualización anual es un proceso independiente del seguimiento semestral: genera alertas anuales propias con cron y contadores propios dentro de un centro de alertas unificado, y usa código único de punto de venta; guarda fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones, y conserva la marca de seguimiento para consulta.
 
 ## 16. Definiciones pendientes de confirmación
 

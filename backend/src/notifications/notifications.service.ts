@@ -12,6 +12,8 @@ import { PrismaService } from '../prisma/prisma.service.js'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
+type NotificationSource = 'arriendos' | 'colocadores' | 'clientes'
+
 type NotificationRow = {
   id: string
   type: NotificationType
@@ -22,8 +24,20 @@ type NotificationRow = {
     id: string
     businessName: string
     nit: string
+    category: { key: string }
+    nextFollowUpDate: Date | null
   }
   reads: { readAt: Date }[]
+}
+
+const categorySourceMap: Record<string, NotificationSource> = {
+  ARRIENDOS: 'arriendos',
+  COLOCADORES_INDEPENDIENTES: 'colocadores',
+  CLIENTES: 'clientes',
+}
+
+function resolveSource(categoryKey: string): NotificationSource {
+  return categorySourceMap[categoryKey] ?? 'arriendos'
 }
 
 const notificationBaseSelect = {
@@ -37,6 +51,8 @@ const notificationBaseSelect = {
       id: true,
       businessName: true,
       nit: true,
+      category: { select: { key: true } },
+      nextFollowUpDate: true,
     },
   },
 } satisfies Prisma.NotificationSelect
@@ -56,9 +72,12 @@ function serializeNotification(row: NotificationRow) {
 
   return {
     id: row.id,
+    process: 'FOLLOW_UP' as const,
+    source: resolveSource(row.counterparty.category.key),
     type: row.type,
     message: row.message,
     scheduledDate: toDateOnly(row.scheduledDate),
+    currentDueDate: toDateOnly(row.counterparty.nextFollowUpDate),
     createdAt: row.createdAt,
     counterparty: row.counterparty,
     read: Boolean(read),
@@ -159,9 +178,12 @@ export class NotificationsService {
 
     return {
       id: notification.id,
+      process: 'FOLLOW_UP' as const,
+      source: resolveSource(notification.counterparty.category.key),
       type: notification.type,
       message: notification.message,
       scheduledDate: toDateOnly(notification.scheduledDate),
+      currentDueDate: toDateOnly(notification.counterparty.nextFollowUpDate),
       createdAt: notification.createdAt,
       counterparty: notification.counterparty,
       read: true,

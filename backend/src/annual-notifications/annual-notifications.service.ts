@@ -32,6 +32,7 @@ type AnnualNotificationRow = {
     source: string
     code: string
     businessName: string
+    filingDate: Date | null
   }
   reads: { readAt: Date }[]
 }
@@ -48,6 +49,7 @@ const annualNotificationBaseSelect = {
       source: true,
       code: true,
       businessName: true,
+      filingDate: true,
     },
   },
 } satisfies Prisma.AnnualNotificationSelect
@@ -70,8 +72,12 @@ function serialize(row: AnnualNotificationRow) {
     type: row.type,
     message: row.message,
     scheduledDate: toDateOnly(row.scheduledDate),
+    currentDueDate: currentAnnualDueDate(
+      row.annualCounterparty.filingDate,
+    ),
     createdAt: row.createdAt,
-    source: 'ANNUAL' as const,
+    process: 'ANNUAL' as const,
+    source: row.annualCounterparty.source as AnnualSource,
     counterparty: null,
     annualCounterparty: {
       source: row.annualCounterparty.source as AnnualSource,
@@ -90,6 +96,10 @@ function buildMessage(
   dueDate: string,
 ): string {
   return `La actualización anual de ${businessName} vence en ${days} días (${dueDate}).`
+}
+
+function currentAnnualDueDate(filingDate: Date | null): string | null {
+  return filingDate ? toDateOnly(annualDueDate(filingDate)) : null
 }
 
 @Injectable()
@@ -147,8 +157,12 @@ export class AnnualNotificationsService {
       type: notification.type,
       message: notification.message,
       scheduledDate: toDateOnly(notification.scheduledDate),
+      currentDueDate: currentAnnualDueDate(
+        notification.annualCounterparty.filingDate,
+      ),
       createdAt: notification.createdAt,
-      source: 'ANNUAL' as const,
+      process: 'ANNUAL' as const,
+      source: notification.annualCounterparty.source as AnnualSource,
       counterparty: null,
       annualCounterparty: {
         source: notification.annualCounterparty.source as AnnualSource,

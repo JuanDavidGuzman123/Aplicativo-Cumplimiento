@@ -1,3 +1,10 @@
+export type NotificationProcess = 'FOLLOW_UP' | 'ANNUAL'
+
+export type NotificationSource =
+  | 'arriendos'
+  | 'colocadores'
+  | 'clientes'
+
 export type FollowUpNotificationType = 'D30' | 'D15' | 'DUE' | 'OVERDUE'
 
 export type AnnualNotificationType =
@@ -11,20 +18,24 @@ export type NotificationCounterparty = {
   id: string
   businessName: string
   nit: string
+  category: { key: string }
 }
 
 export type NotificationAnnualCounterparty = {
   id: string
-  source: 'arriendos' | 'clientes'
+  source: NotificationSource
   code: string
   businessName: string
 }
 
 export type FollowUpNotification = {
   id: string
+  process: 'FOLLOW_UP'
+  source: NotificationSource
   type: FollowUpNotificationType
   message: string
   scheduledDate: string | null
+  currentDueDate: string | null
   createdAt: string
   counterparty: NotificationCounterparty | null
   read: boolean
@@ -33,9 +44,12 @@ export type FollowUpNotification = {
 
 export type AnnualNotification = {
   id: string
+  process: 'ANNUAL'
+  source: NotificationSource
   type: AnnualNotificationType
   message: string
   scheduledDate: string | null
+  currentDueDate: string | null
   createdAt: string
   annualCounterparty: NotificationAnnualCounterparty | null
   read: boolean
