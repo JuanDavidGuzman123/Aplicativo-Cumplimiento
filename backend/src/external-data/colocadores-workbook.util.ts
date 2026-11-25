@@ -10,6 +10,7 @@ export const FIELD_ALIASES = {
     'nit o número de documento',
     'numero de documento natural juridica',
     'número de documento natural jurídica',
+    'nit',
   ],
   name: [
     'nombres y apellidos',

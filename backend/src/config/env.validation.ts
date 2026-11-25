@@ -170,6 +170,18 @@ class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  EXTERNAL_PROVEEDORES_WORKBOOK_PATH = '';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_PROVEEDORES_WORKSHEET_NAME = 'FR-SG-83';
+
+  @IsString()
+  @IsOptional()
+  EXTERNAL_PROVEEDORES_COLUMN_MAP = '';
+
+  @IsString()
+  @IsOptional()
   EXTERNAL_DATA_COLUMN_MAP = '';
 
   @IsString()

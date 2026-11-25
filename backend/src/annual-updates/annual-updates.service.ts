@@ -376,7 +376,7 @@ export class AnnualUpdatesService {
       activeRelevant,
       activeRelevantUpdated,
     ] = await this.prisma.$transaction([
-      this.prisma.annualCounterparty.count(),
+      this.prisma.annualCounterparty.count({ where: { source } }),
       this.prisma.annualCounterparty.count({ where: active }),
       this.prisma.annualCounterparty.count({ where: inactive }),
       this.prisma.annualCounterparty.count({

@@ -89,6 +89,11 @@ export function AppLayout() {
           label: 'Clientes',
           icon: Building2,
         },
+        {
+          to: '/actualizacion-anual/proveedores',
+          label: 'Proveedores',
+          icon: Building2,
+        },
       ],
     },
     {

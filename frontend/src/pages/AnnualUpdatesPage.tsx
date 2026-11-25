@@ -96,6 +96,14 @@ const sourceCopy: Record<
     entityLower: 'clientes',
     followUpLabel: 'Clientes en seguimiento',
   },
+  proveedores: {
+    title: 'Actualización Anual Proveedores',
+    description:
+      'Consulte el estado de la actualización anual de los proveedores y sus vencimientos desde FR-SG-83. El seguimiento semestral se gestiona por separado.',
+    entity: 'Proveedores',
+    entityLower: 'proveedores',
+    followUpLabel: 'Proveedores en seguimiento',
+  },
 }
 
 const reportLabels: Record<ExternalReportMetric, string> = {

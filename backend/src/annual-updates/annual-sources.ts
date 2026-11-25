@@ -1,4 +1,8 @@
-export const ANNUAL_SOURCES = ['arriendos', 'clientes'] as const
+export const ANNUAL_SOURCES = [
+  'arriendos',
+  'clientes',
+  'proveedores',
+] as const
 
 export type AnnualSource = (typeof ANNUAL_SOURCES)[number]
 

@@ -172,6 +172,15 @@ export class ExternalDataService implements OnModuleInit {
       },
       'clientes',
     )
+    this.cache.initialize(
+      {
+        enabled: this.config.enabled,
+        configured: this.config.proveedoresReadConfigured,
+        webhookConfigured: false,
+        pollMs: this.config.pollMs,
+      },
+      'proveedores',
+    )
 
     if (this.config.enabled && this.config.readConfigured) {
       void this.refresh('inicio', 'arriendos').catch(
@@ -198,6 +207,16 @@ export class ExternalDataService implements OnModuleInit {
         (error: unknown) => {
           this.logger.warn(
             `No se pudo cargar el libro de clientes al iniciar: ${this.errorMessage(error)}`,
+          )
+        },
+      )
+    }
+
+    if (this.config.proveedoresReadConfigured) {
+      void this.refresh('inicio', 'proveedores').catch(
+        (error: unknown) => {
+          this.logger.warn(
+            `No se pudo cargar el libro de proveedores al iniciar: ${this.errorMessage(error)}`,
           )
         },
       )
@@ -403,6 +422,10 @@ export class ExternalDataService implements OnModuleInit {
 
   getAllClientesRows(): ExternalAnnualRow[] {
     return this.getAllRows('clientes')
+  }
+
+  getAllProveedoresRows(): ExternalAnnualRow[] {
+    return this.getAllRows('proveedores')
   }
 
   async getClientesFollowUpRows(): Promise<ExternalAnnualRow[]> {
@@ -635,6 +658,16 @@ export class ExternalDataService implements OnModuleInit {
           sourceWorkbook,
           this.config.rawClientesColumnMap,
         )
+      } else if (source === 'proveedores') {
+        workbook = await this.reader.readWorkbook(
+          this.config.proveedoresWorkbookPath,
+          this.config.proveedoresWorksheetName,
+        )
+        sourceWorkbook = workbook
+        resolved = this.mapper.resolveMapping(
+          sourceWorkbook,
+          this.config.rawProveedoresColumnMap,
+        )
       } else {
         workbook = await this.reader.read()
         sourceWorkbook = workbook
@@ -826,6 +859,10 @@ export class ExternalDataService implements OnModuleInit {
       return this.config.clientesReadConfigured
     }
 
+    if (source === 'proveedores') {
+      return this.config.proveedoresReadConfigured
+    }
+
     return this.config.readConfigured
   }
 
@@ -836,6 +873,10 @@ export class ExternalDataService implements OnModuleInit {
 
     if (source === 'clientes') {
       return 'Falta EXTERNAL_CLIENTES_WORKBOOK_PATH para leer FR-SG-80'
+    }
+
+    if (source === 'proveedores') {
+      return 'Falta EXTERNAL_PROVEEDORES_WORKBOOK_PATH para leer FR-SG-83'
     }
 
     return this.config.source === 'file'

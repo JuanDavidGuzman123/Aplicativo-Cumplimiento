@@ -65,7 +65,9 @@ export function AnnualNotificationBell() {
     const basePath =
       annualCounterparty?.source === 'clientes'
         ? '/actualizacion-anual/clientes'
-        : '/actualizacion-anual'
+        : annualCounterparty?.source === 'proveedores'
+          ? '/actualizacion-anual/proveedores'
+          : '/actualizacion-anual'
 
     navigate(
       code

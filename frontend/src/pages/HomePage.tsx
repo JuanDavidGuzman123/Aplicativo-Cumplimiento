@@ -131,15 +131,19 @@ export function HomePage() {
       const [
         arriendosResult,
         clientesResult,
+        proveedoresResult,
         dueArriendosResult,
         dueClientesResult,
+        dueProveedoresResult,
         followResult,
         annualResult,
       ] = await Promise.allSettled([
         getExternalSummary('arriendos'),
         getExternalSummary('clientes'),
+        getExternalSummary('proveedores'),
         getExternalUpdatesDue({}, 'arriendos'),
         getExternalUpdatesDue({}, 'clientes'),
+        getExternalUpdatesDue({}, 'proveedores'),
         getNotifications(),
         getAnnualNotifications(),
       ])
@@ -151,8 +155,10 @@ export function HomePage() {
       if (
         arriendosResult.status !== 'fulfilled' ||
         clientesResult.status !== 'fulfilled' ||
+        proveedoresResult.status !== 'fulfilled' ||
         dueArriendosResult.status !== 'fulfilled' ||
         dueClientesResult.status !== 'fulfilled' ||
+        dueProveedoresResult.status !== 'fulfilled' ||
         followResult.status !== 'fulfilled' ||
         annualResult.status !== 'fulfilled'
       ) {
@@ -165,10 +171,13 @@ export function HomePage() {
 
       const arriendos = arriendosResult.value
       const clientes = clientesResult.value
+      const proveedores = proveedoresResult.value
       const dueArriendos: ExternalDueListResponse =
         dueArriendosResult.value
       const dueClientes: ExternalDueListResponse =
         dueClientesResult.value
+      const dueProveedores: ExternalDueListResponse =
+        dueProveedoresResult.value
       const followNotifications: FollowUpNotificationsResponse =
         followResult.value
       const annualNotifications: AnnualNotificationsResponse =
@@ -179,10 +188,14 @@ export function HomePage() {
       const dueSoon =
         dueArriendos.summary.upcoming +
         dueClientes.summary.upcoming +
+        dueProveedores.summary.upcoming +
         dueArriendos.summary.dueToday +
-        dueClientes.summary.dueToday
+        dueClientes.summary.dueToday +
+        dueProveedores.summary.dueToday
       const overdue =
-        dueArriendos.summary.overdue + dueClientes.summary.overdue
+        dueArriendos.summary.overdue +
+        dueClientes.summary.overdue +
+        dueProveedores.summary.overdue
 
       setData({
         pendingAnnual,
@@ -205,6 +218,13 @@ export function HomePage() {
             'Actualización anual corporativa y vencimientos.',
             '/actualizacion-anual/clientes',
             clientes,
+          ),
+          buildSourceCard(
+            'proveedores',
+            'Proveedores',
+            'Actualización anual y vencimientos de proveedores.',
+            '/actualizacion-anual/proveedores',
+            proveedores,
           ),
         ],
       })
@@ -240,6 +260,14 @@ export function HomePage() {
         'Consulte las actualizaciones anuales de clientes corporativos y sus vencimientos desde FR-SG-80.',
       icon: CalendarCheck,
       iconClass: 'bg-blue-50 text-blue-700',
+    },
+    {
+      to: '/actualizacion-anual/proveedores',
+      title: 'Actualización Anual Proveedores',
+      description:
+        'Consulte las actualizaciones anuales de proveedores y sus vencimientos desde FR-SG-83.',
+      icon: CalendarCheck,
+      iconClass: 'bg-violet-50 text-violet-700',
     },
     {
       to: '/contrapartes',

@@ -107,6 +107,7 @@ export const notificationSourceLabels: Record<
   arriendos: 'Arriendos',
   clientes: 'Clientes',
   colocadores: 'Colocadores independientes',
+  proveedores: 'Proveedores',
 }
 
 export const alertStateLabels: Record<AlertState, string> = {
@@ -236,7 +237,9 @@ function resolveNotificationDetails(notification: AlertNotification) {
     const basePath =
       source === 'clientes'
         ? '/actualizacion-anual/clientes'
-        : '/actualizacion-anual'
+        : source === 'proveedores'
+          ? '/actualizacion-anual/proveedores'
+          : '/actualizacion-anual'
 
     return {
       id: counterparty?.id ?? 'sin-registro',

@@ -38,6 +38,7 @@ import {
   syncArriendosFromExternal,
   syncClientesFromExternal,
   syncColocadoresFromExternal,
+  syncProveedoresFromExternal,
   getCounterparty,
   reactivateCounterparty,
 } from '../services/counterparties'
@@ -247,6 +248,7 @@ export function CounterpartiesPage() {
   const [syncingArriendos, setSyncingArriendos] = useState(false)
   const [syncingColocadores, setSyncingColocadores] = useState(false)
   const [syncingClientes, setSyncingClientes] = useState(false)
+  const [syncingProveedores, setSyncingProveedores] = useState(false)
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<
     string | null
   >(initialUrlState.category || null)
@@ -672,6 +674,32 @@ export function CounterpartiesPage() {
     }
   }
 
+  const syncProveedores = async () => {
+    if (syncingProveedores) {
+      return
+    }
+
+    setSyncingProveedores(true)
+    setCategoriesError('')
+
+    try {
+      const result = await syncProveedoresFromExternal()
+      showToast(
+        `Sincronización completada: ${result.created} nuevas contrapartes de Proveedores, ${result.alreadyExisting} ya existían.`,
+      )
+      refresh()
+    } catch (syncError) {
+      setCategoriesError(
+        getApiErrorMessage(
+          syncError,
+          'No fue posible sincronizar las contrapartes desde FR-SG-83',
+        ),
+      )
+    } finally {
+      setSyncingProveedores(false)
+    }
+  }
+
   const closeModal = () => {
     setModal(null)
     setDetail(null)
@@ -999,6 +1027,21 @@ export function CounterpartiesPage() {
                   <RefreshCw className="size-4" />
                 )}
                 Traer de FR-SG-80
+              </button>
+            )}
+            {selectedCategoryKey === 'PROVEEDORES' && (
+              <button
+                type="button"
+                onClick={syncProveedores}
+                disabled={syncingProveedores}
+                className={secondaryButtonClass}
+              >
+                {syncingProveedores ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-4" />
+                )}
+                Traer de FR-SG-83
               </button>
             )}
             <p className="text-sm text-slate-500">

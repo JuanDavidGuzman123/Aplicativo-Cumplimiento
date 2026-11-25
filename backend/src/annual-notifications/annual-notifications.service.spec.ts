@@ -524,13 +524,14 @@ describe('AnnualNotificationsService', () => {
       .spyOn(service, 'generateDaily')
       .mockResolvedValueOnce({ evaluated: 2, created: 1 })
       .mockResolvedValueOnce({ evaluated: 5, created: 3 })
+      .mockResolvedValueOnce({ evaluated: 1, created: 1 })
 
     const result = await service.generateAllDaily()
 
     expect(
       generateDaily.mock.calls.map(([source]) => source),
     ).toEqual([...ANNUAL_SOURCES])
-    expect(result).toEqual({ evaluated: 7, created: 4 })
+    expect(result).toEqual({ evaluated: 8, created: 5 })
     generateDaily.mockRestore()
   })
 })

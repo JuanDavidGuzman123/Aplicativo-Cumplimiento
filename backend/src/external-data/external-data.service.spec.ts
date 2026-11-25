@@ -187,10 +187,14 @@ function createMockService(
     pollMs: 900000,
     rawColumnMap: '',
     rawClientesColumnMap: '',
+    rawProveedoresColumnMap: '',
+    proveedoresReadConfigured: true,
     colocadoresWorkbookPath: 'colocadores.xlsx',
     colocadoresWorksheetName: 'FR-SG-81',
     clientesWorkbookPath: 'clientes.xlsx',
     clientesWorksheetName: 'FR-SG-80',
+    proveedoresWorkbookPath: 'proveedores.xlsx',
+    proveedoresWorksheetName: 'FR-SG-83',
     ...configOverrides,
   }
   const workbook = options.readWorkbook ?? makeWorkbook()
@@ -413,10 +417,11 @@ describe('ExternalDataService', () => {
     expect(service.getSummary().annual.inactive.pendingUpdate).toBe(0)
   })
 
-  it('aísla los datos de Arriendos, Colocadores y Clientes por fuente', () => {
+  it('aísla los datos de Arriendos, Colocadores, Clientes y Proveedores por fuente', () => {
     const arriendos = [row('A', filingDateForDue(1))]
     const colocadores = [row('C', filingDateForDue(2))]
     const clientes = [row('L', filingDateForDue(3))]
+    const proveedores = [row('P', filingDateForDue(4))]
     const cache = {
       getSnapshot: vi.fn((source = 'arriendos') => ({
         rows:
@@ -424,7 +429,9 @@ describe('ExternalDataService', () => {
             ? colocadores
             : source === 'clientes'
               ? clientes
-              : arriendos,
+              : source === 'proveedores'
+                ? proveedores
+                : arriendos,
       })),
       getStatus: vi.fn(() => status),
     }
@@ -438,6 +445,7 @@ describe('ExternalDataService', () => {
     expect(service.getSummary('arriendos').totals.total).toBe(1)
     expect(service.getSummary('colocadores').totals.total).toBe(1)
     expect(service.getSummary('clientes').totals.total).toBe(1)
+    expect(service.getSummary('proveedores').totals.total).toBe(1)
     expect(
       service.findAll({ page: 1, pageSize: 10 }, 'colocadores').data[0]
         .code,
@@ -449,12 +457,13 @@ describe('ExternalDataService', () => {
     expect(cache.getSnapshot).toHaveBeenCalledWith('clientes')
   })
 
-  it('inicializa caché para tres fuentes y refreshea solo las configuradas', () => {
+  it('inicializa caché para cuatro fuentes y refreshea solo las configuradas', () => {
     const { service, cache } = createMockService({
       enabled: true,
       readConfigured: true,
       colocadoresReadConfigured: false,
       clientesReadConfigured: true,
+      proveedoresReadConfigured: true,
       webhookConfigured: true,
       pollMs: 120000,
     })
@@ -462,7 +471,7 @@ describe('ExternalDataService', () => {
 
     service.onModuleInit()
 
-    expect(cache.initialize).toHaveBeenCalledTimes(3)
+    expect(cache.initialize).toHaveBeenCalledTimes(4)
     expect(cache.initialize).toHaveBeenNthCalledWith(
       1,
       {
@@ -493,9 +502,20 @@ describe('ExternalDataService', () => {
       },
       'clientes',
     )
+    expect(cache.initialize).toHaveBeenNthCalledWith(
+      4,
+      {
+        enabled: true,
+        configured: true,
+        webhookConfigured: false,
+        pollMs: 120000,
+      },
+      'proveedores',
+    )
     expect(refresh.mock.calls).toEqual([
       ['inicio', 'arriendos'],
       ['inicio', 'clientes'],
+      ['inicio', 'proveedores'],
     ])
   })
 
@@ -505,12 +525,13 @@ describe('ExternalDataService', () => {
       readConfigured: false,
       colocadoresReadConfigured: false,
       clientesReadConfigured: false,
+      proveedoresReadConfigured: false,
     })
     const refresh = vi.spyOn(service, 'refresh').mockResolvedValue(status)
 
     service.onModuleInit()
 
-    expect(cache.initialize).toHaveBeenCalledTimes(3)
+    expect(cache.initialize).toHaveBeenCalledTimes(4)
     expect(cache.initialize).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: false, configured: false }),
       'arriendos',
@@ -554,6 +575,11 @@ describe('ExternalDataService', () => {
         'clientes',
         { clientesReadConfigured: false },
         'Falta EXTERNAL_CLIENTES_WORKBOOK_PATH para leer FR-SG-80',
+      ],
+      [
+        'proveedores',
+        { proveedoresReadConfigured: false },
+        'Falta EXTERNAL_PROVEEDORES_WORKBOOK_PATH para leer FR-SG-83',
       ],
     ]
 
@@ -615,6 +641,7 @@ describe('ExternalDataService', () => {
     const cases: Array<[ExternalSource, string, string]> = [
       ['colocadores', 'colocadores.xlsx', 'FR-SG-81'],
       ['clientes', 'clientes.xlsx', 'FR-SG-80'],
+      ['proveedores', 'proveedores.xlsx', 'FR-SG-83'],
     ]
 
     for (const [source, path, worksheetName] of cases) {
@@ -629,7 +656,7 @@ describe('ExternalDataService', () => {
       )
       expect(result.source).toBe(source)
 
-      if (source === 'clientes') {
+      if (source === 'clientes' || source === 'proveedores') {
         expect(mapper.resolveMapping).toHaveBeenCalledWith(
           expect.any(Object),
           '',
@@ -816,8 +843,11 @@ describe('ExternalDataService', () => {
       'A',
     ])
     expect(
+      service.getAllProveedoresRows().map((item) => item.code),
+    ).toEqual(['A'])
+    expect(
       cache.getSnapshot.mock.calls.map(([source]) => source),
-    ).toEqual(['arriendos', 'colocadores', 'clientes'])
+    ).toEqual(['arriendos', 'colocadores', 'clientes', 'proveedores'])
   })
 
   it('delega el reporte de pendientes activos al generador de reportes', () => {

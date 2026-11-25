@@ -49,6 +49,7 @@ services:
       - ${EXTERNAL_ARRIENDOS_WORKBOOK_DIR:-./workbooks/arriendos}:/app/workbooks/arriendos
       - ${EXTERNAL_COLOCADORES_WORKBOOK_DIR:-./workbooks/colocadores}:/app/workbooks/colocadores
       - ${EXTERNAL_CLIENTES_WORKBOOK_DIR:-./workbooks/clientes}:/app/workbooks/clientes
+      - ${EXTERNAL_PROVEEDORES_WORKBOOK_DIR:-./workbooks/proveedores}:/app/workbooks/proveedores
     depends_on:
       db:
         condition: service_healthy

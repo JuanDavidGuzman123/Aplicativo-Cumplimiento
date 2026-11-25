@@ -33,6 +33,14 @@ export async function syncClientesFromExternal(): Promise<CounterpartySyncResult
   return data
 }
 
+export async function syncProveedoresFromExternal(): Promise<CounterpartySyncResult> {
+  const { data } = await api.post<CounterpartySyncResult>(
+    '/counterparties/sync-proveedores',
+  )
+
+  return data
+}
+
 export async function getCategories(): Promise<CategorySummary[]> {
   const { data } = await api.get<CategorySummary[]>('/categories')
   return data

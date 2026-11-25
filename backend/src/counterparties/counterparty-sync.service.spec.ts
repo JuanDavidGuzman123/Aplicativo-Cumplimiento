@@ -40,6 +40,7 @@ describe('CounterpartySyncService', () => {
     getAllRows: ReturnType<typeof vi.fn>
     getAllColocadoresRows: ReturnType<typeof vi.fn>
     getClientesFollowUpRows: ReturnType<typeof vi.fn>
+    getAllProveedoresRows: ReturnType<typeof vi.fn>
   }
   let categories: { resolveId: ReturnType<typeof vi.fn> }
   let audit: { record: ReturnType<typeof vi.fn> }
@@ -60,6 +61,7 @@ describe('CounterpartySyncService', () => {
       getAllRows: vi.fn(),
       getAllColocadoresRows: vi.fn(),
       getClientesFollowUpRows: vi.fn().mockResolvedValue([]),
+      getAllProveedoresRows: vi.fn(),
     }
     categories = { resolveId: vi.fn().mockResolvedValue('category-1') }
     audit = { record: vi.fn() }
@@ -176,6 +178,46 @@ describe('CounterpartySyncService', () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'SYNC_CLIENTES_COUNTERPARTIES',
+      }),
+    )
+  })
+
+  it('importa de FR-SG-83 solo las filas marcadas para seguimiento', async () => {
+    externalData.getAllProveedoresRows.mockReturnValue([
+      row({ id: 'a', nit: '1234567' }),
+      row({
+        id: 'b',
+        nit: '7654321',
+        requiresSemiannualFollowUp: false,
+      }),
+    ])
+    prisma.counterparty.createMany.mockResolvedValue({ count: 1 })
+
+    const result = await service.syncProveedores('user-1')
+
+    expect(externalData.refresh).toHaveBeenCalledWith(
+      'sincronización de contrapartes de Proveedores',
+      'proveedores',
+    )
+    expect(categories.resolveId).toHaveBeenCalledWith('PROVEEDORES')
+    expect(prisma.counterparty.createMany).toHaveBeenCalledTimes(1)
+    const data = prisma.counterparty.createMany.mock.calls[0][0].data
+    expect(data).toHaveLength(1)
+    expect(data[0].nit).toBe('1234567')
+    expect(data[0].nextFollowUpDate).toEqual(
+      new Date('2026-07-15T00:00:00.000Z'),
+    )
+    expect(data[0]).not.toHaveProperty('id')
+    expect(result).toEqual({
+      sourceRows: 3,
+      followUpRows: 1,
+      created: 1,
+      alreadyExisting: 0,
+      skippedInvalid: 0,
+    })
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'SYNC_PROVEEDORES_COUNTERPARTIES',
       }),
     )
   })

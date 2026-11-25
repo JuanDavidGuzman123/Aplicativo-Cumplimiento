@@ -50,8 +50,8 @@ const statusOrder: AlertState[] = [
 ]
 
 const sourceOrder: Record<NotificationProcess, NotificationSource[]> = {
-  FOLLOW_UP: ['arriendos', 'clientes', 'colocadores'],
-  ANNUAL: ['arriendos', 'clientes'],
+  FOLLOW_UP: ['arriendos', 'clientes', 'colocadores', 'proveedores'],
+  ANNUAL: ['arriendos', 'clientes', 'proveedores'],
 }
 
 const stateStyles: Record<
@@ -457,7 +457,9 @@ function AlertMenu({
                                   ? 'bg-blue-400'
                                   : category.source === 'colocadores'
                                     ? 'bg-emerald-500'
-                                    : 'bg-amber-400'
+                                    : category.source === 'proveedores'
+                                      ? 'bg-violet-500'
+                                      : 'bg-amber-400'
                               }`}
                             />
                             <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">

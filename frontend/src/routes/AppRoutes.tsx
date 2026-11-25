@@ -26,6 +26,10 @@ export function AppRoutes() {
                 element={<AnnualUpdatesPage source="clientes" />}
               />
               <Route
+                path="actualizacion-anual/proveedores"
+                element={<AnnualUpdatesPage source="proveedores" />}
+              />
+              <Route
                 path="actualizacion-anual"
                 element={<AnnualUpdatesPage />}
               />

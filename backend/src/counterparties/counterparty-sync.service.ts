@@ -21,6 +21,10 @@ import {
 import {
   CLIENTES_CATEGORY_KEY,
 } from '../external-data/clientes-workbook.service.js'
+import {
+  PROVEEDORES_CATEGORY_KEY,
+  PROVEEDORES_WORKBOOK_LABEL,
+} from '../external-data/proveedores-workbook.service.js'
 import { ExternalDataService } from '../external-data/external-data.service.js'
 import type { ExternalAnnualRow } from '../external-data/types.js'
 import { PrismaService } from '../prisma/prisma.service.js'
@@ -161,6 +165,35 @@ export class CounterpartySyncService {
       followUpRows,
       preserveWorkbookIds: true,
       workbookIdPrefix: 'clientes-fr-sg-80',
+    })
+  }
+
+  async syncProveedores(
+    actorId: string,
+  ): Promise<CounterpartySyncResult> {
+    const status = await this.externalData.refresh(
+      'sincronización de contrapartes de Proveedores',
+      'proveedores',
+    )
+
+    if (status.rowCount === 0) {
+      throw new ServiceUnavailableException(
+        'El libro FR-SG-83 no está disponible en este momento',
+      )
+    }
+
+    const rows = this.externalData
+      .getAllProveedoresRows()
+      .filter((row) => row.requiresSemiannualFollowUp === true)
+    const followUpRows = rows.length
+
+    return this.syncRows(actorId, {
+      action: 'SYNC_PROVEEDORES_COUNTERPARTIES',
+      categoryKey: PROVEEDORES_CATEGORY_KEY,
+      rows,
+      sourceName: PROVEEDORES_WORKBOOK_LABEL,
+      sourceRows: status.rowCount,
+      followUpRows,
     })
   }
 

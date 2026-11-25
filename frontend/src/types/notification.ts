@@ -4,6 +4,7 @@ export type NotificationSource =
   | 'arriendos'
   | 'colocadores'
   | 'clientes'
+  | 'proveedores'
 
 export type FollowUpNotificationType =
   | 'D30'

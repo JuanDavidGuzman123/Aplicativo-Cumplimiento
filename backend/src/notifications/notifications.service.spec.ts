@@ -162,6 +162,35 @@ describe('NotificationsService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled()
   })
 
+  it('maps PROVEEDORES follow-up notifications to the proveedores source', async () => {
+    const scheduledDate = nextFollowUpForDue(1)
+    prisma.notification.findMany.mockResolvedValue([
+      {
+        id: 'notification-proveedores',
+        type: NotificationType.D1,
+        message: 'Recordatorio de proveedor',
+        scheduledDate,
+        createdAt: new Date('2026-06-19T00:00:00.000Z'),
+        counterparty: {
+          id: 'counterparty-proveedores',
+          businessName: 'Proveedor Uno',
+          nit: '900000002',
+          category: { key: 'PROVEEDORES' },
+          nextFollowUpDate: scheduledDate,
+        },
+        reads: [],
+      },
+    ])
+
+    const result = await createService(prisma).findAll('user-7')
+
+    expect(result.data[0]).toMatchObject({
+      id: 'notification-proveedores',
+      process: 'FOLLOW_UP',
+      source: 'proveedores',
+    })
+  })
+
   it('marks a notification as read for the requested user', async () => {
     const readAt = new Date('2026-06-20T09:30:00.000Z')
 

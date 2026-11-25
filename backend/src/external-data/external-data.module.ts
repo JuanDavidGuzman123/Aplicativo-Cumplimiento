@@ -4,6 +4,7 @@ import { ArriendosWorkbookService } from './arriendos-workbook.service.js'
 import { ColocadoresWorkbookService } from './colocadores-workbook.service.js'
 import { ColocadoresWorkbookWriterService } from './colocadores-workbook.writer.service.js'
 import { ClientesWorkbookService } from './clientes-workbook.service.js'
+import { ProveedoresWorkbookService } from './proveedores-workbook.service.js'
 import { DelegatedTokenStore } from './delegated-token.store.js'
 import { ExternalAnnualMapperService } from './external-annual-mapper.service.js'
 import { ExternalChangeDetectionService } from './external-change-detection.service.js'
@@ -12,6 +13,7 @@ import { ExternalDataConfigService } from './external-data.config.service.js'
 import {
   ExternalClientesDataController,
   ExternalDataController,
+  ExternalProveedoresDataController,
 } from './external-data.controller.js'
 import { ExternalDataReportService } from './external-data-report.service.js'
 import { ExternalDataService } from './external-data.service.js'
@@ -27,6 +29,7 @@ import type { ExternalStreamEvent } from './types.js'
   controllers: [
     ExternalDataController,
     ExternalClientesDataController,
+    ExternalProveedoresDataController,
     ExternalWebhookController,
   ],
   providers: [
@@ -39,6 +42,7 @@ import type { ExternalStreamEvent } from './types.js'
     ColocadoresWorkbookService,
     ArriendosWorkbookService,
     ClientesWorkbookService,
+    ProveedoresWorkbookService,
     ExternalDataCacheService,
     DelegatedTokenStore,
     MicrosoftGraphService,
@@ -55,6 +59,7 @@ import type { ExternalStreamEvent } from './types.js'
     ColocadoresWorkbookService,
     ArriendosWorkbookService,
     ClientesWorkbookService,
+    ProveedoresWorkbookService,
   ],
 })
 export class ExternalDataModule {}

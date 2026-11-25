@@ -1,4 +1,4 @@
-export type ExternalSource = 'arriendos' | 'clientes'
+export type ExternalSource = 'arriendos' | 'clientes' | 'proveedores'
 
 export type ExternalAnnualStatus = 'ACTIVE' | 'INACTIVE'
 

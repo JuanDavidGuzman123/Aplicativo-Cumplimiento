@@ -119,21 +119,25 @@ describe('ExternalDataConfigService', () => {
     })
   })
 
-  it('aplica rutas y hojas por defecto para Clientes y colocadores', () => {
+  it('aplica rutas y hojas por defecto para Clientes, colocadores y proveedores', () => {
     const empty = createService({})
 
     expect(empty.service.clientesWorkbookPath).toBe('')
     expect(empty.service.clientesWorksheetName).toBe('FR-SG-80')
     expect(empty.service.colocadoresWorkbookPath).toBe('')
     expect(empty.service.colocadoresWorksheetName).toBe('FR-SG-81')
+    expect(empty.service.proveedoresWorkbookPath).toBe('')
+    expect(empty.service.proveedoresWorksheetName).toBe('FR-SG-83')
 
     const whitespace = createService({
       EXTERNAL_CLIENTES_WORKSHEET_NAME: '   ',
       EXTERNAL_COLOCADORES_WORKSHEET_NAME: '   ',
+      EXTERNAL_PROVEEDORES_WORKSHEET_NAME: '   ',
     })
 
     expect(whitespace.service.clientesWorksheetName).toBe('FR-SG-80')
     expect(whitespace.service.colocadoresWorksheetName).toBe('FR-SG-81')
+    expect(whitespace.service.proveedoresWorksheetName).toBe('FR-SG-83')
 
     const configured = createService({
       EXTERNAL_DATA_ENABLED: true,
@@ -141,6 +145,9 @@ describe('ExternalDataConfigService', () => {
       EXTERNAL_CLIENTES_WORKSHEET_NAME: '  Clientes 2026 ',
       EXTERNAL_COLOCADORES_WORKBOOK_PATH: '  C:\\datos\\colocadores.xlsx  ',
       EXTERNAL_COLOCADORES_WORKSHEET_NAME: '  Colocadores 2026 ',
+      EXTERNAL_PROVEEDORES_WORKBOOK_PATH: '  C:\\datos\\proveedores.xlsx  ',
+      EXTERNAL_PROVEEDORES_WORKSHEET_NAME: '  Proveedores 2026 ',
+      EXTERNAL_PROVEEDORES_COLUMN_MAP: ' {"code":"nit"} ',
     })
 
     expect(configured.service.clientesWorkbookPath).toBe(
@@ -153,26 +160,38 @@ describe('ExternalDataConfigService', () => {
     expect(configured.service.colocadoresWorksheetName).toBe(
       'Colocadores 2026',
     )
+    expect(configured.service.proveedoresWorkbookPath).toBe(
+      'C:\\datos\\proveedores.xlsx',
+    )
+    expect(configured.service.proveedoresWorksheetName).toBe(
+      'Proveedores 2026',
+    )
+    expect(configured.service.rawProveedoresColumnMap).toBe('{"code":"nit"}')
     expect(configured.service.clientesReadConfigured).toBe(true)
     expect(configured.service.colocadoresReadConfigured).toBe(true)
+    expect(configured.service.proveedoresReadConfigured).toBe(true)
 
     const disabled = createService({
       EXTERNAL_DATA_ENABLED: false,
       EXTERNAL_CLIENTES_WORKBOOK_PATH: 'C:\\datos\\clientes.xlsx',
       EXTERNAL_COLOCADORES_WORKBOOK_PATH: 'C:\\datos\\colocadores.xlsx',
+      EXTERNAL_PROVEEDORES_WORKBOOK_PATH: 'C:\\datos\\proveedores.xlsx',
     })
 
     expect(disabled.service.clientesReadConfigured).toBe(false)
     expect(disabled.service.colocadoresReadConfigured).toBe(false)
+    expect(disabled.service.proveedoresReadConfigured).toBe(false)
 
     const missingPaths = createService({
       EXTERNAL_DATA_ENABLED: true,
       EXTERNAL_CLIENTES_WORKBOOK_PATH: '   ',
       EXTERNAL_COLOCADORES_WORKBOOK_PATH: '',
+      EXTERNAL_PROVEEDORES_WORKBOOK_PATH: '   ',
     })
 
     expect(missingPaths.service.clientesReadConfigured).toBe(false)
     expect(missingPaths.service.colocadoresReadConfigured).toBe(false)
+    expect(missingPaths.service.proveedoresReadConfigured).toBe(false)
   })
 
   it('respeta cero como valor numérico explícito', () => {

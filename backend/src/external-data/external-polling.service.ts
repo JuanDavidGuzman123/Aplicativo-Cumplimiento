@@ -40,6 +40,10 @@ export class ExternalPollingService
         source: 'clientes',
         configured: this.config.clientesReadConfigured,
       },
+      {
+        source: 'proveedores',
+        configured: this.config.proveedoresReadConfigured,
+      },
     ]
 
     for (const { source, configured } of sources) {

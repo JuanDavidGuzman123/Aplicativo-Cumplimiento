@@ -57,6 +57,13 @@ export class CounterpartiesController {
     return this.syncService.syncClientes(actor.id)
   }
 
+  @Post('sync-proveedores')
+  @Roles(UserRole.ADMIN, UserRole.ANALYST)
+  @HttpCode(HttpStatus.OK)
+  syncProveedores(@CurrentUser() actor: AuthenticatedUser) {
+    return this.syncService.syncProveedores(actor.id)
+  }
+
   @Post(':id/risk-evaluation')
   @Roles(UserRole.ADMIN, UserRole.ANALYST)
   @HttpCode(HttpStatus.OK)

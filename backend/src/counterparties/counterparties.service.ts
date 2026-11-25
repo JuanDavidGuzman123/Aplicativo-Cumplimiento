@@ -19,6 +19,10 @@ import {
   ClientesWorkbookService,
 } from '../external-data/clientes-workbook.service.js'
 import {
+  PROVEEDORES_CATEGORY_KEY,
+  ProveedoresWorkbookService,
+} from '../external-data/proveedores-workbook.service.js'
+import {
   calculateCalendarStatus,
 } from '../common/utils/calendar-status.js'
 import {
@@ -161,6 +165,7 @@ export class CounterpartiesService {
     private readonly arriendosWorkbook: ArriendosWorkbookService,
     private readonly colocadoresWorkbook: ColocadoresWorkbookService,
     private readonly clientesWorkbook: ClientesWorkbookService,
+    private readonly proveedoresWorkbook: ProveedoresWorkbookService,
   ) {}
 
   async findAll(query: ListCounterpartiesQueryDto) {
@@ -643,6 +648,10 @@ export class CounterpartiesService {
 
     if (categoryKey === CLIENTES_CATEGORY_KEY) {
       return this.clientesWorkbook
+    }
+
+    if (categoryKey === PROVEEDORES_CATEGORY_KEY) {
+      return this.proveedoresWorkbook
     }
 
     return null

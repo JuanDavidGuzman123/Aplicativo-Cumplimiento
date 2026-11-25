@@ -17,6 +17,11 @@ describe('validateEnvironment', () => {
     expect(environment.BCRYPT_SALT_ROUNDS).toBe(12)
     expect(environment.TRUST_PROXY).toBe(0)
     expect(environment.EXTERNAL_DATA_ENABLED).toBe(false)
+    expect(environment.EXTERNAL_PROVEEDORES_WORKBOOK_PATH).toBe('')
+    expect(environment.EXTERNAL_PROVEEDORES_WORKSHEET_NAME).toBe(
+      'FR-SG-83',
+    )
+    expect(environment.EXTERNAL_PROVEEDORES_COLUMN_MAP).toBe('')
     expect(environment.EXTERNAL_GRAPH_BASE_URL).toBe(
       'https://graph.microsoft.com/v1.0',
     )

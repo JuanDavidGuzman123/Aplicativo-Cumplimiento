@@ -221,3 +221,111 @@ export class ExternalClientesDataController {
     response.send(file)
   }
 }
+
+@Controller('external-data/proveedores')
+export class ExternalProveedoresDataController {
+  constructor(
+    private readonly dataService: ExternalDataService,
+    private readonly cache: ExternalDataCacheService,
+    private readonly reportService: ExternalDataReportService,
+  ) {}
+
+  @Get('summary')
+  getSummary() {
+    return this.dataService.getSummary('proveedores')
+  }
+
+  @Get('updates-due')
+  getUpdatesDue(@Query() query: ListExternalUpdatesDueQueryDto) {
+    return this.dataService.getUpdatesDue(
+      {
+        sort: query.sort,
+        dir: query.dir,
+        page: query.page,
+        pageSize: query.pageSize,
+      },
+      'proveedores',
+    )
+  }
+
+  @Get('status')
+  getStatus() {
+    return this.dataService.getStatus('proveedores')
+  }
+
+  @Get('reports/pending-active')
+  async getPendingActiveReport(@Res() response: Response) {
+    await this.sendReport('pending-active', response)
+  }
+
+  @Get('reports/:metric')
+  async getReport(
+    @Param('metric') metric: string,
+    @Res() response: Response,
+  ) {
+    if (
+      !EXTERNAL_REPORT_METRICS.includes(metric as ExternalReportMetric)
+    ) {
+      throw new BadRequestException('Métrica de reporte no válida')
+    }
+
+    await this.sendReport(metric as ExternalReportMetric, response)
+  }
+
+  @Post('refresh')
+  refresh() {
+    return this.dataService.refresh(
+      'actualización manual de Proveedores',
+      'proveedores',
+    )
+  }
+
+  @Sse('events')
+  events(): Observable<MessageEvent> {
+    return this.cache.events.pipe(
+      filter((event) => event.source === 'proveedores'),
+      map((event) => ({
+        type: event.type,
+        id: event.at,
+        data: event,
+      })),
+    )
+  }
+
+  @Get()
+  findAll(@Query() query: ListExternalUpdatesQueryDto) {
+    return this.dataService.findAll(
+      {
+        code: query.code,
+        search: query.search,
+        status: query.status as never,
+        annualStatus: query.annualStatus as never,
+        requiresSemiannualFollowUp: query.requiresSemiannualFollowUp,
+        sort: query.sort,
+        dir: query.dir,
+        page: query.page,
+        pageSize: query.pageSize,
+      },
+      'proveedores',
+    )
+  }
+
+  private async sendReport(
+    metric: ExternalReportMetric,
+    response: Response,
+  ): Promise<void> {
+    const file = await this.reportService.generate(
+      metric,
+      'proveedores',
+    )
+    const fileName = `reporte-proveedores-${metric}-${new Date().toISOString().slice(0, 10)}.xlsx`
+
+    response.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Cache-Control': 'no-store',
+    })
+    response.send(file)
+  }
+}

@@ -98,6 +98,26 @@ export class ExternalDataConfigService {
     return this.enabled && Boolean(this.clientesWorkbookPath)
   }
 
+  get proveedoresWorkbookPath(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_PROVEEDORES_WORKBOOK_PATH')
+        ?.trim() ?? ''
+    )
+  }
+
+  get proveedoresWorksheetName(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_PROVEEDORES_WORKSHEET_NAME')
+        ?.trim() || 'FR-SG-83'
+    )
+  }
+
+  get proveedoresReadConfigured(): boolean {
+    return this.enabled && Boolean(this.proveedoresWorkbookPath)
+  }
+
   get rawColumnMap(): string {
     return (
       this.config.get<string>('EXTERNAL_DATA_COLUMN_MAP')?.trim() ?? ''
@@ -108,6 +128,14 @@ export class ExternalDataConfigService {
     return (
       this.config
         .get<string>('EXTERNAL_CLIENTES_COLUMN_MAP')
+        ?.trim() ?? ''
+    )
+  }
+
+  get rawProveedoresColumnMap(): string {
+    return (
+      this.config
+        .get<string>('EXTERNAL_PROVEEDORES_COLUMN_MAP')
         ?.trim() ?? ''
     )
   }

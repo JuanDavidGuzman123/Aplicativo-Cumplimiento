@@ -2,6 +2,7 @@ export const EXTERNAL_SOURCES = [
   'arriendos',
   'colocadores',
   'clientes',
+  'proveedores',
 ] as const
 
 export type ExternalSource = (typeof EXTERNAL_SOURCES)[number]

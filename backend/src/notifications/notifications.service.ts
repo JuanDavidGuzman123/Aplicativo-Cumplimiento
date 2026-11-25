@@ -12,7 +12,11 @@ import { PrismaService } from '../prisma/prisma.service.js'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 
-type NotificationSource = 'arriendos' | 'colocadores' | 'clientes'
+type NotificationSource =
+  | 'arriendos'
+  | 'colocadores'
+  | 'clientes'
+  | 'proveedores'
 
 type NotificationRow = {
   id: string
@@ -34,6 +38,7 @@ const categorySourceMap: Record<string, NotificationSource> = {
   ARRIENDOS: 'arriendos',
   COLOCADORES_INDEPENDIENTES: 'colocadores',
   CLIENTES: 'clientes',
+  PROVEEDORES: 'proveedores',
 }
 
 function resolveSource(categoryKey: string): NotificationSource {
