@@ -31,6 +31,8 @@ enum RiskDecision {
 enum NotificationType {
   D30
   D15
+  D3
+  D1
   DUE
   OVERDUE
 }
@@ -41,6 +43,7 @@ enum AnnualNotificationType {
   ANNUAL_D5
   ANNUAL_D3
   ANNUAL_D1
+  ANNUAL_DUE
 }
 
 enum ImportStatus {

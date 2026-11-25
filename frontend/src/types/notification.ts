@@ -5,7 +5,13 @@ export type NotificationSource =
   | 'colocadores'
   | 'clientes'
 
-export type FollowUpNotificationType = 'D30' | 'D15' | 'DUE' | 'OVERDUE'
+export type FollowUpNotificationType =
+  | 'D30'
+  | 'D15'
+  | 'D3'
+  | 'D1'
+  | 'DUE'
+  | 'OVERDUE'
 
 export type AnnualNotificationType =
   | 'ANNUAL_D15'
@@ -13,6 +19,7 @@ export type AnnualNotificationType =
   | 'ANNUAL_D5'
   | 'ANNUAL_D3'
   | 'ANNUAL_D1'
+  | 'ANNUAL_DUE'
 
 export type NotificationCounterparty = {
   id: string

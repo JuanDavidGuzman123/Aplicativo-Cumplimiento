@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ExcelJS from 'exceljs'
 import { ExternalDataReportService } from './external-data-report.service.js'
 import { ExternalDataService } from './external-data.service.js'
@@ -26,6 +26,10 @@ const row: ExternalUpdateDueRow = {
 }
 
 describe('ExternalDataReportService', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('genera un xlsx con los pendientes activos', async () => {
     const dataService = {
       getReport: vi.fn(() => ({
@@ -64,5 +68,31 @@ describe('ExternalDataReportService', () => {
     expect(sheet?.getCell('A5').value).toBe('37')
     expect(sheet?.rowCount).toBe(5)
     expect(sheet?.autoFilter).toBe('A4:L5')
+  })
+
+  it('delega generatePendingActive con la fuente por defecto', async () => {
+    const service = new ExternalDataReportService(
+      {} as unknown as ExternalDataService,
+    )
+    const expected = Buffer.from('reporte')
+    const generate = vi.spyOn(service, 'generate').mockResolvedValue(expected)
+
+    const result = await service.generatePendingActive()
+
+    expect(generate).toHaveBeenCalledWith('pending-active', 'arriendos')
+    expect(result).toBe(expected)
+  })
+
+  it('delega generatePendingActive con la fuente indicada', async () => {
+    const service = new ExternalDataReportService(
+      {} as unknown as ExternalDataService,
+    )
+    const expected = Buffer.from('reporte-clientes')
+    const generate = vi.spyOn(service, 'generate').mockResolvedValue(expected)
+
+    const result = await service.generatePendingActive('clientes')
+
+    expect(generate).toHaveBeenCalledWith('pending-active', 'clientes')
+    expect(result).toBe(expected)
   })
 })

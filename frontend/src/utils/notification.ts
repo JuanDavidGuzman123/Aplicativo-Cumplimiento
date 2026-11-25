@@ -14,6 +14,8 @@ export const followUpNotificationTypeLabels: Record<
 > = {
   D30: 'Próximo',
   D15: 'Prioritario',
+  D3: 'Recordatorio 3 días',
+  D1: 'Recordatorio 1 día',
   DUE: 'Vence hoy',
   OVERDUE: 'Vencido',
 }
@@ -27,6 +29,7 @@ export const annualNotificationTypeLabels: Record<
   ANNUAL_D5: 'Anual 5 días',
   ANNUAL_D3: 'Anual 3 días',
   ANNUAL_D1: 'Anual 1 día',
+  ANNUAL_DUE: 'Vence hoy',
 }
 
 export const followUpNotificationTypeTones: Record<
@@ -35,7 +38,9 @@ export const followUpNotificationTypeTones: Record<
 > = {
   D30: 'blue',
   D15: 'amber',
-  DUE: 'amber',
+  D3: 'amber',
+  D1: 'amber',
+  DUE: 'red',
   OVERDUE: 'red',
 }
 
@@ -47,7 +52,8 @@ export const annualNotificationTypeTones: Record<
   ANNUAL_D10: 'amber',
   ANNUAL_D5: 'red',
   ANNUAL_D3: 'amber',
-  ANNUAL_D1: 'red',
+  ANNUAL_D1: 'amber',
+  ANNUAL_DUE: 'red',
 }
 
 export type AlertState =
@@ -189,7 +195,8 @@ export function getReminderLabel(type: string): string {
   const labels: Record<string, string> = {
     D30: 'Recordatorio 30 días',
     D15: 'Recordatorio 15 días',
-    D7: 'Recordatorio 7 días',
+    D3: 'Recordatorio 3 días',
+    D1: 'Recordatorio 1 día',
     DUE: 'Fecha de vencimiento',
     OVERDUE: 'Vencimiento',
     ANNUAL_D15: 'Recordatorio 15 días',
@@ -197,6 +204,7 @@ export function getReminderLabel(type: string): string {
     ANNUAL_D5: 'Recordatorio 5 días',
     ANNUAL_D3: 'Recordatorio 3 días',
     ANNUAL_D1: 'Recordatorio 1 día',
+    ANNUAL_DUE: 'Fecha de vencimiento',
   }
 
   if (labels[type]) {

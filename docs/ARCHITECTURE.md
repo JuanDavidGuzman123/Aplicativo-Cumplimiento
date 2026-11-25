@@ -71,13 +71,13 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 
 ### Notificaciones (Fase 6)
 
-- `GET /notifications` devuelve las alertas globales ordenadas de la más reciente a la más antigua y el contador `unreadCount` del usuario autenticado. `PATCH /notifications/:id/read` registra la lectura de forma idempotente.
+- `GET /notifications` devuelve las alertas globales ordenadas de la más reciente a la más antigua, solo el recordatorio vigente por obligación, excluye los tipos históricos y devuelve el contador `unreadCount` del usuario autenticado. `PATCH /notifications/:id/read` registra la lectura de forma idempotente.
 - La generación se ejecuta al iniciar la aplicación y cada día a las 07:00 de `America/Bogota` (configurable con `SCHEDULE_NOTIFICATIONS_CRON`). Es segura si se ejecuta varias veces.
-- Se generan alertas solo para contrapartes `ACTIVE` con `nextFollowUpDate`: `D30` para 16–30 días, `D15` para 1–15 días, `DUE` para el día del vencimiento y `OVERDUE` para fechas pasadas.
+- Se generan alertas solo para contrapartes `ACTIVE` con `nextFollowUpDate` en días exactos: `D3` a 3 días, `D1` a 1 día y `DUE` el día del vencimiento. Los días intermedios y las fechas pasadas no generan ni muestran alertas.
 - La restricción única `(counterpartyId, type, scheduledDate)` impide duplicados cuando la tarea se repite o la aplicación se reinicia.
 - Las notificaciones son globales; cada usuario tiene su propio estado de lectura y contador mediante `NotificationRead`.
-- El centro de alertas de la barra superior consulta las alertas al iniciar, cada 60 segundos y al abrirse; muestra contadores por familia, permite marcar como leída y navega a la contraparte o a la actualización anual correspondiente. Agrupa los recordatorios por obligación y los ordena por estado real: vencidas, próximas a vencer y pendientes; dentro de cada estado separa por proceso/categoría, incluidos Arriendos, Clientes y Colocadores independientes en seguimiento. La lectura no altera el cumplimiento.
-- Verificado con build/lint del backend y frontend y flujos reales contra la API: generación de los cuatro tipos, exclusión de archivadas, idempotencia tras reinicios, lectura por usuario y respuestas 401/404/400.
+- Los botones `Seguimiento` y `Actualización` de la barra superior consultan sus alertas al iniciar, cada 60 segundos y al abrirse; muestran contadores independientes, permiten marcar como leída y navegan a la contraparte o a la actualización anual correspondiente. Muestran solo el recordatorio vigente por obligación y lo ordenan por estado real: vencidas, próximas a vencer y pendientes; dentro de cada estado separan por proceso/categoría, incluidos Arriendos, Clientes y Colocadores independientes en seguimiento. La lectura no altera el cumplimiento.
+- Verificado con build/lint del backend y frontend y flujos reales contra la API: generación de los tres tipos activos, exclusión de archivadas, idempotencia tras reinicios, lectura por usuario y respuestas 401/404/400.
 
 ### Importación Excel (Fase 7)
 
@@ -100,7 +100,7 @@ El sistema **no** realiza debida diligencia, consultas en listas restrictivas, v
 - `GET /annual-updates/summary` (autenticado) devuelve totales de activos/inactivos, actualizados en el año y pendientes activos. Los pendientes consideran solo diligenciamientos desde el año anterior (`currentYear - 1`; 2025 en este corte); 2024 o antes quedan fuera. Los inactivos solo se incluyen en los conteos.
 - `GET /annual-updates` (autenticado) lista con búsqueda, estado, situación anual y seguimiento registrado, con paginación, e incluye fecha, año, tipo de debida diligencia y observaciones completas.
 - `GET /annual-updates/updates-due` (autenticado) lista contrapartes activas con diligenciamiento desde el año anterior (`currentYear - 1`; 2025 en este corte): vencidas, de hoy y próximas a 15 días, ordenadas por urgencia; devuelve conteos de cada grupo y la alerta correspondiente. Las filas de 2024 o antes y sin fecha quedan fuera.
-- La fecha límite es `filingDate + 1 año`, con ajuste del 29 de febrero al 28. Los recordatorios `ANNUAL_D3` (3–2 días) y `ANNUAL_D1` (1–0 días) se generan con `skipDuplicates` por `(annualCounterpartyId, type, scheduledDate)`.
+- La fecha límite es `filingDate + 1 año`, con ajuste del 29 de febrero al 28. Los recordatorios `ANNUAL_D15` (15 días), `ANNUAL_D5` (5 días), `ANNUAL_D1` (1 día) y `ANNUAL_DUE` (0 días) se generan solo en esos días exactos con `skipDuplicates` por `(annualCounterpartyId, type, scheduledDate)`. La API devuelve solo el recordatorio vigente por obligación; los días intermedios no muestran alertas.
 - `POST /annual-updates/import/preview` y `POST /annual-updates/import/confirm` (solo ADMIN) reciben un `.xlsx`/`.xlsm` y detectan automáticamente código de punto de venta, nombre, estado (A/I), fecha de diligenciamiento, año, tipo de debida diligencia, seguimiento y observaciones; validan sin guardar antes de confirmar. La confirmación es idempotente por `codeNormalized` y registra `ANNUAL_UPDATES_IMPORTED`. Si faltan columnas obligatorias, la vista previa devuelve los encabezados detectados, sin interfaz de mapeo manual. Cuando un código se repite, se conserva la fila con la fecha/año más reciente y las anteriores se marcan como `IGNORED` (“Histórico omitido”), fuera de los errores.
 - La columna de seguimiento se almacena y se muestra para consulta con tres estados: Sí, No y vacío. Las celdas vacías de la base se conservan vacías y el indicador se denomina “Contrapartes en seguimiento”. No crea automáticamente registros en el módulo semestral. La sincronización Excel↔aplicativo queda para una fase posterior. La importación no elimina registros ausentes en el archivo.
 - La pantalla `/actualizacion-anual` (autenticados) muestra indicadores, filtros, tabla, estado de la fuente y sincronización manual. La carga manual ya no forma parte de esta pantalla. El estado “pendiente” aplica solo a puntos de venta activos sin actualización en el año.
@@ -315,21 +315,21 @@ Reglas de integridad:
 
 ## 10. Notificaciones
 
-- Tipos: `D30` (16–30 días antes), `D15` (1–15 días antes), `DUE` (fecha de vencimiento) y `OVERDUE` (vencida).
+- Tipos activos: `D3` (exactamente 3 días antes), `D1` (exactamente 1 día antes) y `DUE` (fecha de vencimiento). `D30`, `D15` y `OVERDUE` se conservan solo para historial.
 - Generación al iniciar la aplicación y tarea diaria a las 07:00 de Bogotá (`SCHEDULE_NOTIFICATIONS_CRON`); también es segura si se ejecuta varias veces. Este cron pertenece solo al seguimiento semestral.
 - Restricción única `(counterpartyId, type, scheduledDate)` para no duplicar alertas.
 - `scheduledDate` corresponde a la fecha de próximo seguimiento que originó la alerta.
 - Solo contrapartes `ACTIVE`; las archivadas se excluyen.
 - Las notificaciones son globales; el contador de no leídas y la marca de lectura son por usuario (`NotificationRead`).
-- El centro de **alertas** de la barra superior agrupa el seguimiento semestral de Arriendos, Colocadores independientes y Clientes, además de la actualización anual. Consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a `/contrapartes/:id`. Cada alerta incluye `process: FOLLOW_UP`, `source: arriendos | colocadores | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y los recordatorios originales agrupados por obligación.
+- El botón **Seguimiento** agrupa el seguimiento semestral de Arriendos, Colocadores independientes y Clientes. Consulta al iniciar, cada 60 segundos y al abrirse, permite marcar como leída y navega a `/contrapartes/:id`. Cada alerta incluye `process: FOLLOW_UP`, `source: arriendos | colocadores | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y solo el recordatorio vigente de la obligación.
 
 ### Notificaciones anuales (independientes)
 
-- Tipos: `ANNUAL_D3` (3–2 días antes) y `ANNUAL_D1` (1–0 días antes). No se crean alertas nuevas para fechas vencidas.
+- Tipos activos: `ANNUAL_D15` (exactamente 15 días antes), `ANNUAL_D5` (exactamente 5 días antes), `ANNUAL_D1` (exactamente 1 día antes) y `ANNUAL_DUE` (fecha de vencimiento). `ANNUAL_D10` y `ANNUAL_D3` se conservan solo para historial. No se crean alertas nuevas para fechas vencidas ni para días intermedios.
 - Solo contrapartes anuales `ACTIVE` con `filingDate` desde el año anterior (`currentYear - 1`; 2025 en este corte). La fecha límite es `filingDate + 1 año`, ajustando el 29 de febrero al 28.
 - Generación al iniciar la aplicación, tarea diaria con `SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` (independiente de `SCHEDULE_NOTIFICATIONS_CRON`) y nueva generación tras confirmar la importación anual; `skipDuplicates` evita duplicados.
 - `GET /annual-notifications` y `PATCH /annual-notifications/:id/read` usan `AnnualNotification` y `AnnualNotificationRead`, sin mezclarse con `Notification`/`NotificationRead`.
-- La actualización anual aparece bajo la pestaña **Anual** del centro de **alertas**, con contadores y marcas de lectura independientes. Cada alerta incluye `process: ANNUAL` y `source: arriendos | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y dirige a `/actualizacion-anual?code=...` o `/actualizacion-anual/clientes?code=...`. No existe una página de alertas separada. La tabla de vencimientos de `/actualizacion-anual` no muestra una columna **Alerta** calculada: esa información vive solo en las alertas persistentes.
+- La actualización anual aparece en el botón **Actualización**, con contadores y marcas de lectura independientes. Cada alerta incluye `process: ANNUAL` y `source: arriendos | clientes`, estado calculado desde `scheduledDate`, días restantes o de retraso y dirige a `/actualizacion-anual?code=...` o `/actualizacion-anual/clientes?code=...`. No existe una página de alertas separada. La tabla de vencimientos de `/actualizacion-anual` no muestra una columna **Alerta** calculada: esa información vive solo en las alertas persistentes.
 
 ## 11. Importación Excel
 

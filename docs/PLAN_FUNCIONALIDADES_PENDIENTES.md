@@ -95,33 +95,34 @@ Organizar **Contrapartes en seguimiento** en categorías escalables, empezando p
 ## 4. Independencia total de alertas
 
 ### Objetivo
-Mantener independientes la alerta de actualización anual y la alerta de seguimiento semestral de contrapartes, sin mezclar contadores, marcas de lectura, navegación ni programación, y presentarlas en un solo centro de alertas fácil de leer.
+Mantener independientes la alerta de actualización anual y la alerta de seguimiento semestral de contrapartes, sin mezclar contadores, marcas de lectura, navegación ni programación, y presentarlas en dos botones independientes y fáciles de leer.
 
 ### Estado
-**Implementado** el 25/11/2026: una campana `Alertas` en el encabezado con pestañas `Todas`, `Seguimiento` y `Anual`; secciones por estado real (`Vencida`, `Por vencer`, `Pendiente`) con subdivisión por proceso/categoría, incluidos los tres procesos de seguimiento; una sola tarjeta por obligación con trazabilidad de recordatorios; metadata `process` y `source` en la API; endpoints, modelos y crons separados (`SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` y `SCHEDULE_NOTIFICATIONS_CRON`); y sin columna **Alerta** calculada en la tabla de vencimientos de Actualización anual. No se creó una página de alertas separada.
+**Implementado** el 25/11/2026: botones `Actualización` y `Seguimiento` en el encabezado, con secciones por estado real (`Vencida`, `Por vencer`, `Pendiente`) y subdivisión por proceso/categoría, incluidos los tres procesos de seguimiento; una sola tarjeta por obligación con el recordatorio vigente; metadata `process` y `source` en la API; endpoints, modelos y crons separados (`SCHEDULE_ANNUAL_NOTIFICATIONS_CRON` y `SCHEDULE_NOTIFICATIONS_CRON`); y sin columna **Alerta** calculada en la tabla de vencimientos de Actualización anual. No se creó una página de alertas separada.
 
 ### Reglas funcionales
-- El centro de alertas consulta `/api/notifications` y `/api/annual-notifications`; cada alerta se identifica por `process` (`FOLLOW_UP` o `ANNUAL`) y `source` (`arriendos`, `colocadores` o `clientes`).
-- La UI calcula el estado desde `scheduledDate` y la fecha actual de Bogotá: vencida si pasó, por vencer si faltan 15 días o menos, y pendiente en adelante. Muestra días de retraso o restantes y conserva los recordatorios originales como trazabilidad.
-- Los recordatorios de una misma obligación se agrupan para mostrar una sola alerta activa. Las notificaciones cuya `scheduledDate` ya no coincide con la fecha vigente del registro no se muestran como activas, por lo que los recordatorios se detienen al completar la actividad sin borrar el historial.
+- Los botones consultan `/api/notifications` y `/api/annual-notifications`; cada alerta se identifica por `process` (`FOLLOW_UP` o `ANNUAL`) y `source` (`arriendos`, `colocadores` o `clientes`).
+- La UI calcula el estado desde `scheduledDate` y la fecha actual de Bogotá: vencida si pasó, por vencer si faltan 15 días o menos, y pendiente en adelante. Muestra días de retraso o restantes y solo el recordatorio vigente.
+- La API devuelve únicamente el recordatorio más reciente por obligación y filtra los tipos históricos. Cuando llega uno nuevo, reemplaza al anterior en la alerta activa sin acumularlo; el historial permanece en la base pero no se expone como alerta activa. Las notificaciones cuya `scheduledDate` ya no coincide con la fecha vigente del registro tampoco se muestran como activas.
+- Seguimiento genera `D3` (exactamente 3 días), `D1` (exactamente 1 día) y `DUE` (hoy). Actualización anual genera `ANNUAL_D15` (exactamente 15 días), `ANNUAL_D5` (exactamente 5 días), `ANNUAL_D1` (exactamente 1 día) y `ANNUAL_DUE` (hoy). Los días intermedios no generan ni muestran alertas.
 - Las alertas de seguimiento marcan `/api/notifications/:id/read` y navegan a `/contrapartes/:id`.
 - Las alertas anuales marcan `/api/annual-notifications/:id/read` y navegan a `/actualizacion-anual?code=...` para Arriendos o a `/actualizacion-anual/clientes?code=...` para Clientes.
 - Marcar como leída una alerta de una familia o fuente no modifica los contadores de las demás ni completa la obligación; el cumplimiento solo cambia cuando se registra la actividad en el módulo correspondiente.
 - La generación diaria de cada familia usa su propia variable de entorno cron; ambas conservan la zona `America/Bogota` y `skipDuplicates`.
-- Los tipos `ANNUAL_D15`, `ANNUAL_D10` y `ANNUAL_D5` se conservan solo para alertas históricas; no se generan alertas nuevas de esos tipos.
+- Los tipos `D30`, `D15`, `OVERDUE`, `ANNUAL_D10` y `ANNUAL_D3` se conservan solo para alertas históricas; no se generan alertas nuevas de esos tipos.
 - No se modifica PostgreSQL ni los workbooks; `Notification`/`AnnualNotification` ya estaban separados en la base.
 
 ### Validación
 - Verificar build, lint y tests de backend y frontend.
-- Verificar en la UI que el centro de alertas muestre contadores independientes, secciones por estado, una sola tarjeta por obligación, días restantes o de retraso y navegación correcta; que la alerta anual abra `/actualizacion-anual?code=...` para Arriendos o `/actualizacion-anual/clientes?code=...` para Clientes, y que la tabla de vencimientos ya no muestre **Alerta**.
+- Verificar en la UI que los botones `Actualización` y `Seguimiento` muestren contadores independientes, secciones por estado, una sola tarjeta por obligación con el recordatorio vigente, días restantes o de retraso y navegación correcta; que la alerta anual abra `/actualizacion-anual?code=...` para Arriendos o `/actualizacion-anual/clientes?code=...` para Clientes, y que la tabla de vencimientos ya no muestre **Alerta**.
 
 ## 7. Clientes corporativos
 
 ### Objetivo
-Gestionar para Clientes el mismo par de procesos que para Arriendos: actualización anual con alertas D3/D1 y seguimiento semestral con historial, sin mezclar códigos, notificaciones ni registros con Arriendos.
+Gestionar para Clientes el mismo par de procesos que para Arriendos: actualización anual con alertas `ANNUAL_D15`/`ANNUAL_D5`/`ANNUAL_D1`/`ANNUAL_DUE` y seguimiento semestral con alertas `D3`/`D1`/`DUE`, sin mezclar códigos, notificaciones ni registros con Arriendos.
 
 ### Estado
-**Implementado** el 25/11/2026: ruta `/actualizacion-anual/clientes`, endpoints `/api/external-data/clientes/*`, `POST /counterparties/sync-clientes`, categoría `CLIENTES`, `AnnualCounterparty.source` con unique `(source, codeNormalized)`, notificaciones anuales por fuente con navegación source-aware y centro unificado de alertas con metadata `process`/`source`. El entorno local quedó configurado con `EXTERNAL_CLIENTES_WORKBOOK_PATH`; en el entorno real esa variable aún debe definirse, y sin ella la fuente queda `unconfigured`.
+**Implementado** el 25/11/2026: ruta `/actualizacion-anual/clientes`, endpoints `/api/external-data/clientes/*`, `POST /counterparties/sync-clientes`, categoría `CLIENTES`, `AnnualCounterparty.source` con unique `(source, codeNormalized)`, notificaciones anuales por fuente con navegación source-aware y botones de alertas con metadata `process`/`source`. El entorno local quedó configurado con `EXTERNAL_CLIENTES_WORKBOOK_PATH`; en el entorno real esa variable aún debe definirse, y sin ella la fuente queda `unconfigured`.
 
 ### Fuente confirmada
 - Carpeta: `W:\124 CUMPLIMIENTO\124. PE GI CUMPLIMIENTO\1. DEBIDA DILIGENCIA\4. Clientes corporativos`.

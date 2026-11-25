@@ -9,11 +9,18 @@ import { ExternalDataConfigService } from './external-data.config.service.js'
 import { ExternalDataService } from './external-data.service.js'
 import { ExternalWorkbookReaderService } from './external-workbook-reader.service.js'
 import type {
+  ExternalAnnualMapping,
   ExternalAnnualRow,
   ExternalDataStatus,
+  ExternalImportHeader,
+  ExternalSource,
+  ExternalSyncStats,
+  ExternalWorkbookData,
+  ExternalWorkbookRow,
 } from './types.js'
 
 const status: ExternalDataStatus = {
+  source: 'arriendos',
   enabled: true,
   configured: true,
   connection: 'connected',
@@ -78,6 +85,80 @@ function row(code: string, filingDate: string): ExternalAnnualRow {
   }
 }
 
+function emptyStats(): ExternalSyncStats {
+  return {
+    totalRows: 0,
+    validRows: 0,
+    ignoredRows: 0,
+    errorRows: 0,
+    added: 0,
+    updated: 0,
+    removed: 0,
+    unchanged: 0,
+  }
+}
+
+function makeWorkbook(
+  headers: ExternalImportHeader[] = [
+    { value: 'nit', label: 'NIT' },
+    { value: 'nombre', label: 'Nombre' },
+    { value: 'seguimiento', label: 'Seguimiento semestral' },
+  ],
+  rows: ExternalWorkbookRow[] = [],
+  overrides: Partial<ExternalWorkbookData> = {},
+): ExternalWorkbookData {
+  return {
+    fileName: 'base.xlsx',
+    sourceName: 'Hoja: Base',
+    sourceUrl: null,
+    tableOrWorksheet: 'Hoja: Base',
+    headers,
+    rows,
+    version: 'version-1',
+    lastModifiedDateTime: '2026-11-20T12:00:00.000Z',
+    ...overrides,
+  }
+}
+
+const followUpHeaders: ExternalImportHeader[] = [
+  { value: 'nit', label: 'NIT' },
+  { value: 'nombre', label: 'Nombre' },
+  { value: 'seguimiento', label: 'Seguimiento semestral' },
+  {
+    value: 'fecha debida diligencia',
+    label: 'Fecha debida diligencia',
+  },
+]
+
+const followUpRows: ExternalWorkbookRow[] = [
+  {
+    rowNumber: 2,
+    values: ['1', 'Uno', 'Sí', '2026-01-15'],
+  },
+  {
+    rowNumber: 3,
+    values: ['2', 'Dos', 'No', '2026-01-16'],
+  },
+  {
+    rowNumber: 4,
+    values: ['3', 'Tres', '', '2026-01-17'],
+  },
+  {
+    rowNumber: 5,
+    values: ['4', 'Cuatro', 'tal vez', '2026-01-18'],
+  },
+]
+
+type MockOptions = {
+  rows?: ExternalAnnualRow[]
+  status?: ExternalDataStatus
+  readWorkbook?: ExternalWorkbookData
+  mapping?: ExternalAnnualMapping
+  mappedRows?: ExternalAnnualRow[]
+  resolveErrors?: string[]
+  mappingErrors?: string[]
+}
+
 function createService(rows: ExternalAnnualRow[]) {
   const cache = {
     getSnapshot: vi.fn(() => ({ rows })),
@@ -90,6 +171,92 @@ function createService(rows: ExternalAnnualRow[]) {
     {} as ExternalWorkbookReaderService,
     {} as ExternalAnnualMapperService,
   )
+}
+
+function createMockService(
+  configOverrides: Record<string, unknown> = {},
+  options: MockOptions = {},
+) {
+  const config = {
+    enabled: true,
+    source: 'graph',
+    readConfigured: true,
+    colocadoresReadConfigured: true,
+    clientesReadConfigured: true,
+    webhookConfigured: false,
+    pollMs: 900000,
+    rawColumnMap: '',
+    rawClientesColumnMap: '',
+    colocadoresWorkbookPath: 'colocadores.xlsx',
+    colocadoresWorksheetName: 'FR-SG-81',
+    clientesWorkbookPath: 'clientes.xlsx',
+    clientesWorksheetName: 'FR-SG-80',
+    ...configOverrides,
+  }
+  const workbook = options.readWorkbook ?? makeWorkbook()
+  const mapping = options.mapping ?? {
+    code: 'nit',
+    businessName: 'nombre',
+    status: 'estado',
+  }
+  const mappedRows = options.mappedRows ?? [row('M', filingDateForDue(1))]
+  const cache = {
+    initialize: vi.fn(),
+    getSnapshot: vi.fn(() => ({ rows: options.rows ?? [] })),
+    getStatus: vi.fn((source: ExternalSource = 'arriendos') => ({
+      ...(options.status ?? status),
+      source,
+    })),
+    setSyncing: vi.fn(),
+    setSuccess: vi.fn(),
+    setError: vi.fn(),
+    setUnconfigured: vi.fn(),
+  }
+  const reader = {
+    read: vi.fn(async () => workbook),
+    readWorkbook: vi.fn(async () => workbook),
+  }
+  const mapper = {
+    resolveMapping: vi.fn(
+      (sourceWorkbook: ExternalWorkbookData, rawColumnMap: string) => ({
+        mapping,
+        errors: options.resolveErrors ?? [],
+        sourceWorkbook,
+        rawColumnMap,
+      }),
+    ),
+    mapWorkbook: vi.fn(
+      (
+        sourceWorkbook: ExternalWorkbookData,
+        resolvedMapping: ExternalAnnualMapping,
+        syncTime: string,
+      ) => ({
+        rows: mappedRows,
+        mapping: resolvedMapping,
+        mappingErrors: options.mappingErrors ?? [],
+        stats: emptyStats(),
+        sourceWorkbook,
+        syncTime,
+      }),
+    ),
+  }
+  const service = new ExternalDataService(
+    config as unknown as ExternalDataConfigService,
+    cache as unknown as ExternalDataCacheService,
+    reader as unknown as ExternalWorkbookReaderService,
+    mapper as unknown as ExternalAnnualMapperService,
+  )
+
+  return {
+    service,
+    config,
+    cache,
+    reader,
+    mapper,
+    workbook,
+    mapping,
+    mappedRows,
+  }
 }
 
 describe('ExternalDataService', () => {
@@ -280,5 +447,392 @@ describe('ExternalDataService', () => {
         .code,
     ).toBe('L')
     expect(cache.getSnapshot).toHaveBeenCalledWith('clientes')
+  })
+
+  it('inicializa caché para tres fuentes y refreshea solo las configuradas', () => {
+    const { service, cache } = createMockService({
+      enabled: true,
+      readConfigured: true,
+      colocadoresReadConfigured: false,
+      clientesReadConfigured: true,
+      webhookConfigured: true,
+      pollMs: 120000,
+    })
+    const refresh = vi.spyOn(service, 'refresh').mockResolvedValue(status)
+
+    service.onModuleInit()
+
+    expect(cache.initialize).toHaveBeenCalledTimes(3)
+    expect(cache.initialize).toHaveBeenNthCalledWith(
+      1,
+      {
+        enabled: true,
+        configured: true,
+        webhookConfigured: true,
+        pollMs: 120000,
+      },
+      'arriendos',
+    )
+    expect(cache.initialize).toHaveBeenNthCalledWith(
+      2,
+      {
+        enabled: true,
+        configured: false,
+        webhookConfigured: false,
+        pollMs: 120000,
+      },
+      'colocadores',
+    )
+    expect(cache.initialize).toHaveBeenNthCalledWith(
+      3,
+      {
+        enabled: true,
+        configured: true,
+        webhookConfigured: false,
+        pollMs: 120000,
+      },
+      'clientes',
+    )
+    expect(refresh.mock.calls).toEqual([
+      ['inicio', 'arriendos'],
+      ['inicio', 'clientes'],
+    ])
+  })
+
+  it('no inicia refrescos cuando la integración está desactivada', () => {
+    const { service, cache } = createMockService({
+      enabled: false,
+      readConfigured: false,
+      colocadoresReadConfigured: false,
+      clientesReadConfigured: false,
+    })
+    const refresh = vi.spyOn(service, 'refresh').mockResolvedValue(status)
+
+    service.onModuleInit()
+
+    expect(cache.initialize).toHaveBeenCalledTimes(3)
+    expect(cache.initialize).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false, configured: false }),
+      'arriendos',
+    )
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('no refreshea cuando la integración está desactivada', async () => {
+    const { service, cache, reader } = createMockService({
+      enabled: false,
+    })
+
+    const result = await service.refresh('manual')
+
+    expect(cache.setUnconfigured).toHaveBeenCalledWith(
+      'La integración externa está desactivada',
+      'arriendos',
+    )
+    expect(reader.read).not.toHaveBeenCalled()
+    expect(result.source).toBe('arriendos')
+  })
+
+  it('informa el motivo por fuente cuando no está configurada', async () => {
+    const cases: Array<[ExternalSource, Record<string, unknown>, string]> = [
+      [
+        'arriendos',
+        { source: 'file', readConfigured: false },
+        'Falta EXTERNAL_WORKBOOK_PATH para la fuente local',
+      ],
+      [
+        'arriendos',
+        { source: 'graph', readConfigured: false },
+        'Faltan credenciales o identificadores de Microsoft Graph',
+      ],
+      [
+        'colocadores',
+        { colocadoresReadConfigured: false },
+        'Falta EXTERNAL_COLOCADORES_WORKBOOK_PATH para leer FR-SG-81',
+      ],
+      [
+        'clientes',
+        { clientesReadConfigured: false },
+        'Falta EXTERNAL_CLIENTES_WORKBOOK_PATH para leer FR-SG-80',
+      ],
+    ]
+
+    for (const [source, overrides, message] of cases) {
+      const { service, cache, reader } = createMockService(overrides)
+
+      const result = await service.refresh('manual', source)
+
+      expect(cache.setUnconfigured).toHaveBeenCalledWith(message, source)
+      expect(reader.read).not.toHaveBeenCalled()
+      expect(reader.readWorkbook).not.toHaveBeenCalled()
+      expect(result.source).toBe(source)
+    }
+  })
+
+  it('sincroniza arriendos con lector y mapeador simulados', async () => {
+    const sourceWorkbook = makeWorkbook()
+    const mapping: ExternalAnnualMapping = {
+      code: 'nit',
+      businessName: 'nombre',
+    }
+    const mappedRows = [row('OK', filingDateForDue(1))]
+    const { service, cache, reader, mapper } = createMockService(
+      { rawColumnMap: '{"code":"nit"}' },
+      { readWorkbook: sourceWorkbook, mapping, mappedRows },
+    )
+
+    const result = await service.refresh('manual')
+
+    expect(reader.read).toHaveBeenCalledTimes(1)
+    expect(reader.readWorkbook).not.toHaveBeenCalled()
+    expect(mapper.resolveMapping).toHaveBeenCalledWith(
+      sourceWorkbook,
+      '{"code":"nit"}',
+    )
+    expect(mapper.mapWorkbook).toHaveBeenCalledWith(
+      sourceWorkbook,
+      mapping,
+      expect.any(String),
+    )
+    expect(cache.setSyncing).toHaveBeenCalledWith('arriendos')
+    expect(cache.setSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rows: mappedRows,
+        mapping,
+        mappingErrors: [],
+        headers: sourceWorkbook.headers,
+        version: sourceWorkbook.version,
+        fileName: sourceWorkbook.fileName,
+        stats: expect.any(Object),
+        source: 'arriendos',
+      }),
+    )
+    expect(cache.setError).not.toHaveBeenCalled()
+    expect(result.source).toBe('arriendos')
+  })
+
+  it('sincroniza colocadores y clientes con la ruta de cada fuente', async () => {
+    const cases: Array<[ExternalSource, string, string]> = [
+      ['colocadores', 'colocadores.xlsx', 'FR-SG-81'],
+      ['clientes', 'clientes.xlsx', 'FR-SG-80'],
+    ]
+
+    for (const [source, path, worksheetName] of cases) {
+      const { service, cache, reader, mapper } = createMockService()
+
+      const result = await service.refresh('manual', source)
+
+      expect(reader.readWorkbook).toHaveBeenCalledWith(path, worksheetName)
+      expect(reader.read).not.toHaveBeenCalled()
+      expect(cache.setSuccess).toHaveBeenCalledWith(
+        expect.objectContaining({ source }),
+      )
+      expect(result.source).toBe(source)
+
+      if (source === 'clientes') {
+        expect(mapper.resolveMapping).toHaveBeenCalledWith(
+          expect.any(Object),
+          '',
+        )
+      } else {
+        const [prepared] = mapper.mapWorkbook.mock.calls[0]
+        expect(prepared.headers.at(-1)).toEqual({
+          value: '__annual_status',
+          label: 'Estado anual',
+        })
+      }
+    }
+  })
+
+  it('registra un error cuando el lector rechaza la promesa', async () => {
+    const { service, cache, reader } = createMockService()
+    reader.read.mockRejectedValueOnce(new Error('libro no disponible'))
+
+    const result = await service.refresh('manual')
+
+    expect(cache.setError).toHaveBeenCalledWith(
+      'libro no disponible',
+      'arriendos',
+    )
+    expect(cache.setSuccess).not.toHaveBeenCalled()
+    expect(result.source).toBe('arriendos')
+  })
+
+  it('registra errores de mapeo como error de sincronización', async () => {
+    const { service, cache } = createMockService(
+      {},
+      { mappingErrors: ['Falta la columna obligatoria "Código"'] },
+    )
+
+    await service.refresh('manual')
+
+    expect(cache.setError).toHaveBeenCalledWith(
+      'Falta la columna obligatoria "Código"',
+      'arriendos',
+    )
+    expect(cache.setSuccess).not.toHaveBeenCalled()
+  })
+
+  it('dedupe refrescos simultáneos de una misma fuente', async () => {
+    const { service } = createMockService()
+    let resolveRefresh!: (value: ExternalDataStatus) => void
+    const pending = new Promise<ExternalDataStatus>((resolve) => {
+      resolveRefresh = resolve
+    })
+    const doRefresh = vi.fn(() => pending)
+    const internals = service as unknown as {
+      doRefresh: (
+        reason: string,
+        source: ExternalSource,
+      ) => Promise<ExternalDataStatus>
+    }
+    internals.doRefresh = doRefresh
+
+    const first = service.refresh('primera')
+    const second = service.refresh('segunda')
+
+    expect(doRefresh).toHaveBeenCalledTimes(1)
+    expect(doRefresh).toHaveBeenCalledWith('primera', 'arriendos')
+
+    resolveRefresh(status)
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      status,
+      status,
+    ])
+    await vi.waitFor(() => expect(doRefresh).toHaveBeenCalledTimes(2))
+  })
+
+  it('filtra seguimientos clientes antes de mapear', async () => {
+    const sourceWorkbook = makeWorkbook(followUpHeaders, followUpRows)
+    const mappedRows = [
+      row('1', filingDateForDue(1)),
+      row('2', filingDateForDue(2)),
+    ]
+    const { service, reader, mapper } = createMockService(
+      {
+        clientesWorkbookPath: 'clientes.xlsx',
+        clientesWorksheetName: 'FR-SG-80',
+        rawClientesColumnMap: '{"code":"nit"}',
+      },
+      { readWorkbook: sourceWorkbook, mappedRows },
+    )
+
+    const result = await service.getClientesFollowUpRows()
+
+    expect(reader.readWorkbook).toHaveBeenCalledWith(
+      'clientes.xlsx',
+      'FR-SG-80',
+    )
+    const [filtered] = mapper.mapWorkbook.mock.calls[0]
+    expect(filtered.rows.map((item) => item.rowNumber)).toEqual([2, 3])
+    expect(mapper.resolveMapping).toHaveBeenCalledWith(
+      filtered,
+      '{"code":"nit"}',
+    )
+    expect(result).toEqual(mappedRows)
+  })
+
+  it('propaga errores de mapeo de clientes', async () => {
+    const sourceWorkbook = makeWorkbook(followUpHeaders, followUpRows)
+    const { service, mapper } = createMockService(
+      {},
+      {
+        readWorkbook: sourceWorkbook,
+        resolveErrors: ['Falta la columna obligatoria "Código"'],
+      },
+    )
+
+    await expect(service.getClientesFollowUpRows()).rejects.toThrow(
+      'Falta la columna obligatoria "Código"',
+    )
+    expect(mapper.mapWorkbook).not.toHaveBeenCalled()
+  })
+
+  it('filtra y prepara seguimientos de colocadores antes de mapear', async () => {
+    const sourceWorkbook = makeWorkbook(followUpHeaders, followUpRows)
+    const mappedRows = [row('1', filingDateForDue(1))]
+    const { service, reader, mapper } = createMockService(
+      {},
+      { readWorkbook: sourceWorkbook, mappedRows },
+    )
+
+    const result = await service.getColocadoresFollowUpRows()
+
+    expect(reader.readWorkbook).toHaveBeenCalledWith(
+      'colocadores.xlsx',
+      'FR-SG-81',
+    )
+    const [prepared, mapping] = mapper.mapWorkbook.mock.calls[0]
+    expect(prepared.rows.map((item) => item.rowNumber)).toEqual([2])
+    expect(prepared.rows[0].values.at(-1)).toBe('A')
+    expect(prepared.headers.at(-1)).toEqual({
+      value: '__annual_status',
+      label: 'Estado anual',
+    })
+    expect(mapping).toMatchObject({
+      code: 'nit',
+      nit: 'nit',
+      businessName: 'nombre',
+      status: '__annual_status',
+      filingDate: 'fecha debida diligencia',
+      requiresSemiannualFollowUp: 'seguimiento',
+    })
+    expect(result).toEqual(mappedRows)
+  })
+
+  it('no pasa filas al mapeador si falta la columna de seguimiento', async () => {
+    const headers = followUpHeaders.filter(
+      (header) => header.value !== 'seguimiento',
+    )
+    const sourceWorkbook = makeWorkbook(headers, followUpRows)
+    const { service, mapper } = createMockService(
+      {},
+      { readWorkbook: sourceWorkbook },
+    )
+
+    await service.getClientesFollowUpRows()
+    await service.getColocadoresFollowUpRows()
+
+    expect(mapper.mapWorkbook).toHaveBeenCalledTimes(2)
+    for (const [prepared] of mapper.mapWorkbook.mock.calls) {
+      expect(prepared.rows).toEqual([])
+    }
+  })
+
+  it('delega estado y obtención de filas en el caché por fuente', () => {
+    const rows = [row('A', `${getBusinessToday().getUTCFullYear()}-01-15`)]
+    const { service, cache } = createMockService({}, { rows })
+
+    expect(service.getStatus('clientes')).toEqual({
+      ...status,
+      source: 'clientes',
+    })
+    expect(cache.getStatus).toHaveBeenCalledWith('clientes')
+    expect(service.getAllRows().map((item) => item.code)).toEqual(['A'])
+    expect(service.getAllColocadoresRows().map((item) => item.code)).toEqual(
+      ['A'],
+    )
+    expect(service.getAllClientesRows().map((item) => item.code)).toEqual([
+      'A',
+    ])
+    expect(
+      cache.getSnapshot.mock.calls.map(([source]) => source),
+    ).toEqual(['arriendos', 'colocadores', 'clientes'])
+  })
+
+  it('delega el reporte de pendientes activos al generador de reportes', () => {
+    const { service } = createMockService()
+    const report = {
+      metric: 'pending-active' as const,
+      title: 'Pendientes de actualizar (activos)',
+      subtitle: '1 activo',
+      generatedAt: '2026-11-20T12:00:00.000Z',
+      currentYear: getBusinessToday().getUTCFullYear(),
+      rows: [],
+    }
+    const getReport = vi.spyOn(service, 'getReport').mockReturnValue(report)
+
+    expect(service.getPendingActiveReport('clientes')).toBe(report)
+    expect(getReport).toHaveBeenCalledWith('pending-active', 'clientes')
   })
 })

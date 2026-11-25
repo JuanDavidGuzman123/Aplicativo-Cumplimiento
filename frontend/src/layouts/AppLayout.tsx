@@ -14,7 +14,10 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { roleLabels } from '../utils/labels'
-import { AlertCenter } from '../components/AlertCenter'
+import {
+  AnnualUpdatesAlertsButton,
+  FollowUpAlertsButton,
+} from '../components/AlertCenter'
 
 type NavItem = {
   to: string
@@ -134,9 +137,10 @@ export function AppLayout() {
             <Menu className="size-5" />
           </button>
 
-          <div className="ml-auto flex items-center gap-4">
-            <AlertCenter />
-            <div className="text-right">
+          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <AnnualUpdatesAlertsButton />
+            <FollowUpAlertsButton />
+            <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-slate-900">{user?.name}</p>
               <p className="text-xs text-slate-500">
                 {user ? roleLabels[user.role] : ''}

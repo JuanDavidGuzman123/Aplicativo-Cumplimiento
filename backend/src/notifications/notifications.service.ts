@@ -67,6 +67,29 @@ function notificationListSelect(userId: string) {
   } satisfies Prisma.NotificationSelect
 }
 
+function keepLatestNotification<T extends { id: string; createdAt: Date }>(
+  rows: T[],
+  getKey: (row: T) => string,
+): T[] {
+  const latest = new Map<string, T>()
+
+  for (const row of rows) {
+    const key = getKey(row)
+    const current = latest.get(key)
+
+    if (
+      !current ||
+      row.createdAt > current.createdAt ||
+      (row.createdAt.getTime() === current.createdAt.getTime() &&
+        row.id > current.id)
+    ) {
+      latest.set(key, row)
+    }
+  }
+
+  return [...latest.values()]
+}
+
 function serializeNotification(row: NotificationRow) {
   const read = row.reads[0] ?? null
 
@@ -86,23 +109,30 @@ function serializeNotification(row: NotificationRow) {
 }
 
 function resolveType(daysUntilDue: number): NotificationType | null {
-  if (daysUntilDue > 30) {
-    return null
+  if (daysUntilDue === 3) {
+    return NotificationType.D3
   }
 
-  if (daysUntilDue > 15) {
-    return NotificationType.D30
-  }
-
-  if (daysUntilDue > 0) {
-    return NotificationType.D15
+  if (daysUntilDue === 1) {
+    return NotificationType.D1
   }
 
   if (daysUntilDue === 0) {
     return NotificationType.DUE
   }
 
-  return NotificationType.OVERDUE
+  return null
+}
+
+function daysUntilFollowUp(dueDate: Date, today: Date): number {
+  return Math.round((dueDate.getTime() - today.getTime()) / DAY_IN_MS)
+}
+
+function isCurrentFollowUpReminder(
+  row: { type: NotificationType; scheduledDate: Date },
+  today: Date,
+): boolean {
+  return resolveType(daysUntilFollowUp(row.scheduledDate, today)) === row.type
 }
 
 function buildMessage(
@@ -111,15 +141,13 @@ function buildMessage(
   daysUntilDue: number,
   dueDate: string,
 ) {
-  switch (type) {
-    case NotificationType.D30:
-    case NotificationType.D15:
-      return `El seguimiento de ${businessName} vence en ${daysUntilDue} días (${dueDate}).`
-    case NotificationType.DUE:
-      return `El seguimiento de ${businessName} vence hoy (${dueDate}).`
-    case NotificationType.OVERDUE:
-      return `El seguimiento de ${businessName} está vencido desde el ${dueDate}.`
+  if (type === NotificationType.DUE) {
+    return `El seguimiento de ${businessName} vence hoy (${dueDate}).`
   }
+
+  const dayLabel = daysUntilDue === 1 ? 'día' : 'días'
+
+  return `El seguimiento de ${businessName} vence en ${daysUntilDue} ${dayLabel} (${dueDate}).`
 }
 
 @Injectable()
@@ -131,25 +159,37 @@ export class NotificationsService {
   async findAll(userId: string) {
     const select = notificationListSelect(userId)
     const activeOnly: Prisma.NotificationWhereInput = {
+      type: {
+        in: [
+          NotificationType.D3,
+          NotificationType.D1,
+          NotificationType.DUE,
+        ],
+      },
       counterparty: { status: CounterpartyStatus.ACTIVE },
     }
 
-    const [rows, unreadCount] = await this.prisma.$transaction([
-      this.prisma.notification.findMany({
-        where: activeOnly,
-        select,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      }),
-      this.prisma.notification.count({
-        where: {
-          ...activeOnly,
-          reads: { none: { userId } },
-        },
-      }),
-    ])
+    const rows = await this.prisma.notification.findMany({
+      where: activeOnly,
+      select,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    })
+
+    const today = getBusinessToday()
+    const currentRows = rows.filter((row) =>
+      isCurrentFollowUpReminder(row, today),
+    )
+    const latestRows = keepLatestNotification(
+      currentRows,
+      (row) =>
+        `${row.counterparty.id}:${toDateOnly(row.scheduledDate) ?? ''}`,
+    )
+    const unreadCount = latestRows.filter(
+      (row) => row.reads.length === 0,
+    ).length
 
     return {
-      data: rows.map((row) => serializeNotification(row)),
+      data: latestRows.map((row) => serializeNotification(row)),
       unreadCount,
     }
   }
