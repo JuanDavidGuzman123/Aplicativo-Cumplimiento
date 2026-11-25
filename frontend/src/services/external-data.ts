@@ -3,6 +3,7 @@ import { getToken } from './auth-storage'
 import type {
   ExternalAnnualListResponse,
   ExternalDataStatus,
+  ExternalDueListParams,
   ExternalDueListResponse,
   ExternalListParams,
   ExternalReportMetric,
@@ -47,7 +48,7 @@ export async function getExternalUpdates(
 }
 
 export async function getExternalUpdatesDue(
-  params: { page?: number; pageSize?: number } = {},
+  params: ExternalDueListParams = {},
   source: ExternalSource = 'arriendos',
 ): Promise<ExternalDueListResponse> {
   const { data } = await api.get<ExternalDueListResponse>(

@@ -162,12 +162,49 @@ export type ExternalStreamEvent = {
   changes?: ExternalSyncStats
 }
 
+export const EXTERNAL_SORT_FIELDS = [
+  'code',
+  'businessName',
+  'status',
+  'filingDate',
+  'filingYear',
+  'annualStatus',
+  'followUp',
+  'updatedAt',
+] as const
+
+export type ExternalSortField = (typeof EXTERNAL_SORT_FIELDS)[number]
+
+export const EXTERNAL_DUE_SORT_FIELDS = [
+  'code',
+  'businessName',
+  'dueDate',
+  'daysUntilDue',
+  'situation',
+] as const
+
+export type ExternalDueSortField =
+  (typeof EXTERNAL_DUE_SORT_FIELDS)[number]
+
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const
+
+export type SortDirection = (typeof SORT_DIRECTIONS)[number]
+
 export type ExternalListParams = {
   code?: string
   search?: string
   status?: ExternalAnnualStatus | ''
   annualStatus?: ExternalUpdateFilter | ''
   requiresSemiannualFollowUp?: boolean | ''
+  sort?: ExternalSortField
+  dir?: SortDirection
   page?: number
   pageSize?: number
+}
+
+export type ExternalDueListParams = {
+  page?: number
+  pageSize?: number
+  sort?: ExternalDueSortField
+  dir?: SortDirection
 }

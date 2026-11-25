@@ -19,8 +19,10 @@ import type {
   ExternalDataStatus,
   ExternalImportHeader,
   ExternalDueQuery,
+  ExternalDueSortField,
   ExternalDueSummary,
   ExternalListQuery,
+  ExternalSortField,
   ExternalMeta,
   ExternalPendingActiveReport,
   ExternalReport,
@@ -33,6 +35,61 @@ import type {
 } from './types.js'
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000
+
+function compareSortValues(
+  first: string | number | null | undefined,
+  second: string | number | null | undefined,
+) {
+  if (typeof first === 'number' && typeof second === 'number') {
+    return first - second
+  }
+
+  return String(first ?? '').localeCompare(String(second ?? ''))
+}
+
+function externalSortValue(
+  row: ExternalAnnualRow,
+  field: ExternalSortField,
+) {
+  switch (field) {
+    case 'code':
+      return row.code
+    case 'businessName':
+      return row.businessName
+    case 'status':
+      return row.status
+    case 'filingDate':
+      return row.filingDate
+    case 'filingYear':
+      return row.filingYear
+    case 'annualStatus':
+      return row.annualStatus
+    case 'followUp':
+      return row.requiresSemiannualFollowUp === null
+        ? null
+        : Number(row.requiresSemiannualFollowUp)
+    case 'updatedAt':
+      return row.updatedAt
+  }
+}
+
+function dueSortValue(
+  row: ExternalUpdateDueRow,
+  field: ExternalDueSortField,
+) {
+  switch (field) {
+    case 'code':
+      return row.code
+    case 'businessName':
+      return row.businessName
+    case 'dueDate':
+      return row.dueDate
+    case 'daysUntilDue':
+      return row.daysUntilDue
+    case 'situation':
+      return row.situation
+  }
+}
 
 const reportCopy: Record<
   ExternalReportMetric,
@@ -469,14 +526,20 @@ export class ExternalDataService implements OnModuleInit {
       )
     }
 
+    const sortField = query.sort ?? 'status'
+    const sortDirection = query.dir === 'desc' ? -1 : 1
+
     rows.sort((first, second) => {
-      if (first.status !== second.status) {
-        return first.status.localeCompare(second.status)
-      }
-      const nameCompare = first.businessName.localeCompare(
-        second.businessName,
+      const result = compareSortValues(
+        externalSortValue(first, sortField),
+        externalSortValue(second, sortField),
       )
-      return nameCompare || first.code.localeCompare(second.code)
+
+      return (
+        sortDirection * result ||
+        first.businessName.localeCompare(second.businessName) ||
+        first.code.localeCompare(second.code)
+      )
     })
 
     return this.paginate(rows, query.page, query.pageSize, source)
@@ -499,11 +562,15 @@ export class ExternalDataService implements OnModuleInit {
       .map((row) => this.toDueRow(row, today))
       .filter((row) => row.situation !== 'NOT_DUE')
       .sort((first, second) => {
-        const firstDays = first.daysUntilDue ?? Number.MAX_SAFE_INTEGER
-        const secondDays =
-          second.daysUntilDue ?? Number.MAX_SAFE_INTEGER
+        const sortField = query.sort ?? 'daysUntilDue'
+        const sortDirection = query.dir === 'desc' ? -1 : 1
+        const result = compareSortValues(
+          dueSortValue(first, sortField),
+          dueSortValue(second, sortField),
+        )
+
         return (
-          firstDays - secondDays || first.code.localeCompare(second.code)
+          sortDirection * result || first.code.localeCompare(second.code)
         )
       })
 

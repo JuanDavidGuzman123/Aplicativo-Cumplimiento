@@ -202,6 +202,35 @@ export type ExternalDueListResponse = {
   status: ExternalDataStatus
 }
 
+export const EXTERNAL_SORT_FIELDS = [
+  'code',
+  'businessName',
+  'status',
+  'filingDate',
+  'filingYear',
+  'annualStatus',
+  'followUp',
+  'updatedAt',
+] as const
+
+export type ExternalSortField =
+  (typeof EXTERNAL_SORT_FIELDS)[number]
+
+export const EXTERNAL_DUE_SORT_FIELDS = [
+  'code',
+  'businessName',
+  'dueDate',
+  'daysUntilDue',
+  'situation',
+] as const
+
+export type ExternalDueSortField =
+  (typeof EXTERNAL_DUE_SORT_FIELDS)[number]
+
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const
+
+export type SortDirection = (typeof SORT_DIRECTIONS)[number]
+
 export const EXTERNAL_REPORT_METRICS = [
   'active',
   'inactive',
@@ -247,11 +276,15 @@ export type ExternalListQuery = {
   status?: ExternalAnnualStatus
   annualStatus?: ExternalUpdateFilter
   requiresSemiannualFollowUp?: boolean
+  sort?: ExternalSortField
+  dir?: SortDirection
   page: number
   pageSize: number
 }
 
 export type ExternalDueQuery = {
+  sort?: ExternalDueSortField
+  dir?: SortDirection
   page: number
   pageSize: number
 }

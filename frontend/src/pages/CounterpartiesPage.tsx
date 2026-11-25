@@ -1,6 +1,9 @@
 import {
   Archive,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
+  ArrowUpDown,
   ClipboardCheck,
   LayoutGrid,
   History,
@@ -12,12 +15,14 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
 import {
   useNavigate,
   useParams,
+  useSearchParams,
 } from 'react-router-dom'
 import {
   Badge,
@@ -25,6 +30,7 @@ import {
 } from '../components/Badge'
 import { Modal } from '../components/Modal'
 import { Pagination } from '../components/Pagination'
+import { useToast } from '../components/toast-context'
 import {
   evaluateRisk,
   getCategories,
@@ -35,13 +41,16 @@ import {
   getCounterparty,
   reactivateCounterparty,
 } from '../services/counterparties'
-import type {
-  CalendarStatus,
-  CategorySummary,
-  CounterpartyDetail,
-  CounterpartyListItem,
-  CounterpartyListResponse,
-  CounterpartyStatus,
+import {
+  COUNTERPARTY_SORT_FIELDS,
+  type CalendarStatus,
+  type CategorySummary,
+  type CounterpartyDetail,
+  type CounterpartyListItem,
+  type CounterpartyListResponse,
+  type CounterpartySortField,
+  type CounterpartyStatus,
+  type SortDirection,
 } from '../types/counterparty'
 import { getApiErrorMessage } from '../utils/api-error'
 import {
@@ -132,9 +141,105 @@ function addSixMonths(value: string): string {
   return next.toISOString().slice(0, 10)
 }
 
+type CounterpartyUrlState = {
+  category: string
+  search: string
+  status: CounterpartyStatus
+  sort: CounterpartySortField
+  dir: SortDirection
+  page: number
+}
+
+function parsePositiveParam(value: string | null, fallback = 1) {
+  const parsed = Number(value)
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function readCounterpartyUrlState(
+  searchParamsKey: string,
+): CounterpartyUrlState {
+  const params = new URLSearchParams(searchParamsKey)
+  const status = params.get('status')
+  const sort = params.get('sort')
+
+  return {
+    category: params.get('category') ?? '',
+    search: params.get('search') ?? '',
+    status: status === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE',
+    sort: COUNTERPARTY_SORT_FIELDS.includes(
+      sort as CounterpartySortField,
+    )
+      ? (sort as CounterpartySortField)
+      : 'status',
+    dir: params.get('dir') === 'desc' ? 'desc' : 'asc',
+    page: parsePositiveParam(params.get('page')),
+  }
+}
+
+function setOrDeleteParam(
+  params: URLSearchParams,
+  key: string,
+  value: string | number,
+) {
+  const normalized = String(value)
+
+  if (normalized) {
+    params.set(key, normalized)
+  } else {
+    params.delete(key)
+  }
+}
+
+type SortableHeaderProps = {
+  label: string
+  field: CounterpartySortField
+  sort: CounterpartySortField
+  dir: SortDirection
+  onSort: (field: CounterpartySortField) => void
+}
+
+function SortableHeader({
+  label,
+  field,
+  sort,
+  dir,
+  onSort,
+}: SortableHeaderProps) {
+  const isActive = sort === field
+  const Icon = isActive
+    ? dir === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
+
+  return (
+    <th scope="col" className="px-4 py-3 font-semibold">
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition hover:bg-slate-200/70 hover:text-slate-900 ${
+          isActive ? 'text-emerald-800' : ''
+        }`}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        <Icon className="size-3.5" />
+      </button>
+    </th>
+  )
+}
+
 export function CounterpartiesPage() {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const { id: notificationCounterpartyId } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const searchParamsKey = searchParams.toString()
+  const [initialUrlState] = useState<CounterpartyUrlState>(() =>
+    readCounterpartyUrlState(searchParamsKey),
+  )
+  const lastSyncedParamsRef = useRef(searchParamsKey)
 
   const [categories, setCategories] = useState<CategorySummary[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
@@ -144,26 +249,84 @@ export function CounterpartiesPage() {
   const [syncingClientes, setSyncingClientes] = useState(false)
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<
     string | null
-  >(null)
+  >(initialUrlState.category || null)
 
-  const [searchDraft, setSearchDraft] = useState('')
+  const [searchDraft, setSearchDraft] = useState(
+    initialUrlState.search,
+  )
   const [query, setQuery] = useState<{
     search: string
     category: string
     status: CounterpartyStatus
     page: number
   }>({
-    search: '',
-    category: '',
-    status: 'ACTIVE',
-    page: 1,
+    search: initialUrlState.search,
+    category: initialUrlState.category,
+    status: initialUrlState.status,
+    page: initialUrlState.page,
   })
+  const [sort, setSort] = useState<CounterpartySortField>(
+    initialUrlState.sort,
+  )
+  const [dir, setDir] = useState<SortDirection>(
+    initialUrlState.dir,
+  )
   const [list, setList] = useState<CounterpartyListResponse | null>(
     null,
   )
   const [listLoading, setListLoading] = useState(false)
   const [listError, setListError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const writeUrlState = (
+    updates: Partial<CounterpartyUrlState>,
+  ) => {
+    const next = new URLSearchParams(searchParamsKey)
+
+    if (updates.category !== undefined) {
+      setOrDeleteParam(next, 'category', updates.category)
+    }
+    if (updates.search !== undefined) {
+      setOrDeleteParam(next, 'search', updates.search.trim())
+    }
+    if (updates.status !== undefined) {
+      setOrDeleteParam(next, 'status', updates.status)
+    }
+    if (updates.sort !== undefined) {
+      setOrDeleteParam(next, 'sort', updates.sort)
+    }
+    if (updates.dir !== undefined) {
+      setOrDeleteParam(next, 'dir', updates.dir)
+    }
+    if (updates.page !== undefined) {
+      setOrDeleteParam(next, 'page', updates.page === 1 ? '' : updates.page)
+    }
+
+    const nextKey = next.toString()
+    lastSyncedParamsRef.current = nextKey
+    setSearchParams(next, { replace: true })
+  }
+
+  useEffect(() => {
+    if (searchParamsKey === lastSyncedParamsRef.current) {
+      return
+    }
+
+    lastSyncedParamsRef.current = searchParamsKey
+    const next = readCounterpartyUrlState(searchParamsKey)
+
+    setSelectedCategoryKey(next.category || null)
+    setSearchDraft(next.search)
+    setSort(next.sort)
+    setDir(next.dir)
+    setQuery({
+      search: next.search,
+      category: next.category,
+      status: next.status,
+      page: next.page,
+    })
+    setListLoading(true)
+  }, [searchParamsKey])
 
   const [modal, setModal] = useState<{
     mode: ModalMode
@@ -176,7 +339,6 @@ export function CounterpartiesPage() {
     Boolean(notificationCounterpartyId),
   )
   const [modalError, setModalError] = useState('')
-  const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [decision, setDecision] = useState<
     'CONTINUE' | 'ARCHIVE'
@@ -236,6 +398,8 @@ export function CounterpartiesPage() {
       search: query.search || undefined,
       category: query.category,
       status: query.status,
+      sort,
+      dir,
       page: query.page,
       pageSize: PAGE_SIZE,
     })
@@ -271,6 +435,8 @@ export function CounterpartiesPage() {
     query.search,
     query.status,
     query.page,
+    sort,
+    dir,
     refreshKey,
   ])
 
@@ -315,15 +481,6 @@ export function CounterpartiesPage() {
     }
   }, [notificationCounterpartyId])
 
-  useEffect(() => {
-    if (!success) {
-      return
-    }
-
-    const timeout = window.setTimeout(() => setSuccess(''), 4500)
-    return () => window.clearTimeout(timeout)
-  }, [success])
-
   const selectCategory = (category: CategorySummary) => {
     setSelectedCategoryKey(category.key)
     setSearchDraft('')
@@ -333,6 +490,12 @@ export function CounterpartiesPage() {
     setQuery({
       search: '',
       category: category.key,
+      status: 'ACTIVE',
+      page: 1,
+    })
+    writeUrlState({
+      category: category.key,
+      search: '',
       status: 'ACTIVE',
       page: 1,
     })
@@ -350,6 +513,12 @@ export function CounterpartiesPage() {
       status: 'ACTIVE',
       page: 1,
     })
+    writeUrlState({
+      category: '',
+      search: '',
+      status: 'ACTIVE',
+      page: 1,
+    })
   }
 
   const changeStatus = (next: CounterpartyStatus) => {
@@ -359,16 +528,30 @@ export function CounterpartiesPage() {
 
     setListLoading(true)
     setQuery((current) => ({ ...current, status: next, page: 1 }))
+    writeUrlState({ status: next, page: 1 })
   }
 
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const nextSearch = searchDraft.trim()
+
     setListLoading(true)
     setQuery((current) => ({
       ...current,
-      search: searchDraft.trim(),
+      search: nextSearch,
       page: 1,
     }))
+    writeUrlState({ search: nextSearch, page: 1 })
+  }
+
+  const handleSort = (field: CounterpartySortField) => {
+    const nextDir: SortDirection =
+      sort === field && dir === 'asc' ? 'desc' : 'asc'
+
+    setListLoading(true)
+    setSort(field)
+    setDir(nextDir)
+    writeUrlState({ sort: field, dir: nextDir, page: 1 })
   }
 
   const openModal = async (
@@ -379,7 +562,6 @@ export function CounterpartiesPage() {
     setDetail(null)
     setDetailLoading(true)
     setModalError('')
-    setSuccess('')
 
     if (mode === 'evaluate') {
       setDecision('CONTINUE')
@@ -422,7 +604,7 @@ export function CounterpartiesPage() {
 
     try {
       const result = await syncArriendosFromExternal()
-      setSuccess(
+      showToast(
         `Sincronización completada: ${result.created} nuevas contrapartes de Arriendos, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
@@ -448,7 +630,7 @@ export function CounterpartiesPage() {
 
     try {
       const result = await syncColocadoresFromExternal()
-      setSuccess(
+      showToast(
         `Sincronización completada: ${result.created} nuevas contrapartes de Colocadores independientes, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
@@ -474,7 +656,7 @@ export function CounterpartiesPage() {
 
     try {
       const result = await syncClientesFromExternal()
-      setSuccess(
+      showToast(
         `Sincronización completada: ${result.created} nuevas contrapartes de Clientes, ${result.alreadyExisting} ya existían.`,
       )
       refresh()
@@ -526,7 +708,7 @@ export function CounterpartiesPage() {
           notes: notes.trim() || undefined,
         })
 
-        setSuccess(
+        showToast(
           decision === 'CONTINUE'
             ? `Evaluación registrada. Próximo seguimiento: ${formatDate(result.nextFollowUpDate)}.`
             : `Contraparte ${modal.item.businessName} archivada.`,
@@ -537,7 +719,7 @@ export function CounterpartiesPage() {
           nextFollowUpDate: reactivateDate || undefined,
         })
 
-        setSuccess(
+        showToast(
           `Contraparte ${modal.item.businessName} reactivada.`,
         )
       } else {
@@ -570,6 +752,53 @@ export function CounterpartiesPage() {
   const searchPlaceholder = isColocadores
     ? 'Buscar por CC o nombre'
     : 'Buscar por NIT o razón social'
+
+  const renderStatusBadges = (item: CounterpartyListItem) =>
+    isColocadores ? (
+      <Badge tone={colocadoresBadge(item).tone}>
+        {colocadoresBadge(item).label}
+      </Badge>
+    ) : (
+      <div className="flex flex-wrap gap-1.5">
+        <Badge tone={statusTones[item.status]}>
+          {statusLabels[item.status]}
+        </Badge>
+        <Badge tone={calendarTones[item.calendarStatus]}>
+          {calendarLabels[item.calendarStatus]}
+        </Badge>
+      </div>
+    )
+
+  const renderActions = (item: CounterpartyListItem) => (
+    <div className="flex flex-nowrap gap-1.5">
+      <button
+        type="button"
+        onClick={() => openModal('history', item)}
+        className={`${secondaryButtonClass} min-h-9 whitespace-nowrap px-2.5 py-1.5 text-xs`}
+      >
+        <History className="size-4" />
+        Historial
+      </button>
+      {item.status === 'ACTIVE' ? (
+        <button
+          type="button"
+          onClick={() => openModal('evaluate', item)}
+          className={`${successButtonClass} min-h-9 whitespace-nowrap px-2.5 py-1.5 text-xs`}
+        >
+          Evaluar
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => openModal('reactivate', item)}
+          className={`${primaryButtonClass} min-h-9 whitespace-nowrap px-2.5 py-1.5 text-xs`}
+        >
+          <RotateCcw className="size-4" />
+          Reactivar
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -637,12 +866,6 @@ export function CounterpartiesPage() {
           </div>
         )}
       </section>
-
-      {success && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {success}
-        </div>
-      )}
 
       {listError && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -712,7 +935,7 @@ export function CounterpartiesPage() {
       )}
 
       {selectedCategoryKey && (
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
         <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
           <form onSubmit={handleSearch} className="flex flex-1 gap-2">
             <div className="relative max-w-sm flex-1">
@@ -800,123 +1023,160 @@ export function CounterpartiesPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50/70 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Contraparte</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium">
-                    Último seguimiento
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Próximo seguimiento
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Motivo de seguimiento
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="transition hover:bg-amber-50/40"
-                  >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900">
+          <>
+            <ul className="divide-y divide-slate-100 xl:hidden">
+              {rows.map((item) => (
+                <li key={item.id} className="p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">
                         {item.businessName}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {documentLabel} {item.nit}
                       </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      {isColocadores ? (
-                        <Badge
-                          tone={
-                            colocadoresBadge(item).tone
-                          }
-                        >
-                          {colocadoresBadge(item).label}
-                        </Badge>
-                      ) : (
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge tone={statusTones[item.status]}>
-                            {statusLabels[item.status]}
-                          </Badge>
-                          <Badge
-                            tone={calendarTones[item.calendarStatus]}
-                          >
-                            {calendarLabels[item.calendarStatus]}
-                          </Badge>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(item.lastFollowUpDate)}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(item.nextFollowUpDate)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.observations ? (
-                        <p
-                          className="line-clamp-2 max-w-sm text-xs text-slate-600"
-                          title={item.observations}
-                        >
-                          {item.observations}
-                        </p>
-                      ) : (
-                        <span className="text-xs text-slate-400">
-                          —
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openModal('history', item)
-                          }
-                          className={secondaryButtonClass}
-                        >
-                          <History className="size-4" />
-                          Historial
-                        </button>
-                        {item.status === 'ACTIVE' ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openModal('evaluate', item)
-                            }
-                            className={successButtonClass}
-                          >
-                            Evaluar
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openModal('reactivate', item)
-                            }
-                            className={primaryButtonClass}
-                          >
-                            <RotateCcw className="size-4" />
-                            Reactivar
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                    </div>
+                    {renderStatusBadges(item)}
+                  </div>
+
+                  <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs">
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Último seguimiento
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatDate(item.lastFollowUpDate)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Próximo seguimiento
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatDate(item.nextFollowUpDate)}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-slate-500">
+                      Motivo de seguimiento
+                    </p>
+                    <p className="mt-1 line-clamp-3 text-sm leading-relaxed text-slate-600">
+                      {item.observations || 'Sin observaciones registradas.'}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 border-t border-slate-100 pt-3">
+                    {renderActions(item)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div
+              role="region"
+              aria-label="Tabla de contrapartes, desplazable horizontalmente"
+              tabIndex={0}
+              className="scrollbar-thin hidden max-h-[34rem] overflow-auto xl:block"
+            >
+              <table
+                aria-label="Contrapartes en seguimiento"
+                className="w-full min-w-[1100px] text-left text-sm"
+              >
+                <caption className="sr-only">
+                  Contrapartes, estado, fechas de seguimiento,
+                  observaciones y acciones disponibles
+                </caption>
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 text-xs uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                  <tr>
+                    <SortableHeader
+                      label="Contraparte"
+                      field="businessName"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Estado"
+                      field="status"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Último seguimiento"
+                      field="lastFollowUpDate"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Próximo seguimiento"
+                      field="nextFollowUpDate"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <th scope="col" className="px-4 py-3 font-semibold">
+                      Motivo de seguimiento
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-4 py-3 text-right font-semibold"
+                    >
+                      Acciones
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="transition hover:bg-amber-50/40"
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">
+                          {item.businessName}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {documentLabel} {item.nit}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3">
+                        {renderStatusBadges(item)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(item.lastFollowUpDate)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(item.nextFollowUpDate)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.observations ? (
+                          <p
+                            className="line-clamp-2 max-w-sm text-xs text-slate-600"
+                            title={item.observations}
+                          >
+                            {item.observations}
+                          </p>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <div className="flex justify-end">
+                          {renderActions(item)}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {list && (
@@ -927,6 +1187,7 @@ export function CounterpartiesPage() {
             onPageChange={(page) => {
               setListLoading(true)
               setQuery((current) => ({ ...current, page }))
+              writeUrlState({ page })
             }}
           />
         )}
@@ -1138,7 +1399,7 @@ export function CounterpartiesPage() {
                     Aún no hay evaluaciones de riesgo registradas.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <div className="scrollbar-thin overflow-x-auto rounded-lg border border-slate-200">
                     <table className="w-full min-w-[720px] text-left text-sm">
                       <thead className="border-b border-slate-200 bg-slate-50/70 text-xs uppercase tracking-wide text-slate-500">
                         <tr>

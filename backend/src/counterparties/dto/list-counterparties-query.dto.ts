@@ -16,6 +16,23 @@ import {
   type CalendarStatus,
 } from '../../common/utils/calendar-status.js'
 
+export const COUNTERPARTY_SORT_FIELDS = [
+  'businessName',
+  'nit',
+  'status',
+  'registrationDate',
+  'lastFollowUpDate',
+  'nextFollowUpDate',
+] as const
+
+export type CounterpartySortField =
+  (typeof COUNTERPARTY_SORT_FIELDS)[number]
+
+export const COUNTERPARTY_SORT_DIRECTIONS = ['asc', 'desc'] as const
+
+export type CounterpartySortDirection =
+  (typeof COUNTERPARTY_SORT_DIRECTIONS)[number]
+
 export class ListCounterpartiesQueryDto {
   @Transform(({ value }) =>
     typeof value === 'string' ? value.trim() : value,
@@ -48,6 +65,24 @@ export class ListCounterpartiesQueryDto {
     message: 'El estado del calendario no es válido',
   })
   calendarStatus?: CalendarStatus
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsIn([...COUNTERPARTY_SORT_FIELDS], {
+    message: 'El campo de ordenamiento no es válido',
+  })
+  sort?: CounterpartySortField
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsIn([...COUNTERPARTY_SORT_DIRECTIONS], {
+    message: 'La dirección de ordenamiento no es válida',
+  })
+  dir?: CounterpartySortDirection
 
   @IsOptional()
   @Type(() => Number)

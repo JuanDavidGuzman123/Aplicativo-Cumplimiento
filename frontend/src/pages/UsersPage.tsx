@@ -1,29 +1,127 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Loader2,
   Pencil,
   Plus,
   Search,
   UserCheck,
   UserX,
+  Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge } from '../components/Badge'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { useToast } from '../components/toast-context'
 import { UserFormModal } from '../components/UserFormModal'
 import { useAuth } from '../hooks/useAuth'
 import { getUsers, updateUserStatus } from '../services/users'
 import type { User } from '../types/user'
 import { getApiErrorMessage } from '../utils/api-error'
 import { formatDate, roleLabels } from '../utils/labels'
-import { primaryButtonClass } from '../utils/styles'
+import { inputClass, primaryButtonClass } from '../utils/styles'
+
+type UserActionsProps = {
+  user: User
+  isSelf: boolean
+  onEdit: () => void
+  onToggleStatus: () => void
+}
+
+function UserActions({
+  user,
+  isSelf,
+  onEdit,
+  onToggleStatus,
+}: UserActionsProps) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50"
+      >
+        <Pencil className="size-3.5" />
+        Editar
+      </button>
+      <button
+        type="button"
+        onClick={onToggleStatus}
+        disabled={isSelf}
+        title={
+          isSelf
+            ? 'No puede desactivar su propio usuario'
+            : undefined
+        }
+        className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+          user.active
+            ? 'border-red-200 text-red-700 hover:bg-red-50'
+            : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+        }`}
+      >
+        {user.active ? (
+          <UserX className="size-3.5" />
+        ) : (
+          <UserCheck className="size-3.5" />
+        )}
+        {user.active ? 'Desactivar' : 'Activar'}
+      </button>
+    </div>
+  )
+}
+
+type UserSortField = 'name' | 'role' | 'active' | 'createdAt'
+type SortDirection = 'asc' | 'desc'
+
+type SortableHeaderProps = {
+  label: string
+  field: UserSortField
+  sort: UserSortField
+  dir: SortDirection
+  onSort: (field: UserSortField) => void
+}
+
+function SortableHeader({
+  label,
+  field,
+  sort,
+  dir,
+  onSort,
+}: SortableHeaderProps) {
+  const isActive = sort === field
+  const Icon = isActive
+    ? dir === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
+
+  return (
+    <th scope="col" className="px-4 py-3 font-semibold">
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition hover:bg-slate-200/70 hover:text-slate-900 ${
+          isActive ? 'text-emerald-800' : ''
+        }`}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        <Icon className="size-3.5" />
+      </button>
+    </th>
+  )
+}
 
 export function UsersPage() {
   const { user: currentUser } = useAuth()
+  const { showToast } = useToast()
   const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<UserSortField>('name')
+  const [dir, setDir] = useState<SortDirection>('asc')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [statusTarget, setStatusTarget] = useState<User | null>(null)
@@ -74,30 +172,50 @@ export function UsersPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!success) {
-      return
-    }
-
-    const timeout = window.setTimeout(() => setSuccess(''), 4000)
-    return () => window.clearTimeout(timeout)
-  }, [success])
-
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const filtered = term
+      ? users.filter((user) =>
+          `${user.name} ${user.email}`.toLowerCase().includes(term),
+        )
+      : users
 
-    if (!term) {
-      return users
+    const valueFor = (user: User): string | number => {
+      switch (sort) {
+        case 'role':
+          return user.role
+        case 'active':
+          return user.active ? 1 : 0
+        case 'createdAt':
+          return user.createdAt ?? ''
+        default:
+          return user.name
+      }
     }
 
-    return users.filter((user) =>
-      `${user.name} ${user.email}`.toLowerCase().includes(term),
-    )
-  }, [users, search])
+    return [...filtered].sort((a, b) => {
+      const first = valueFor(a)
+      const second = valueFor(b)
+      const result =
+        typeof first === 'number' && typeof second === 'number'
+          ? first - second
+          : String(first).localeCompare(String(second), 'es')
+
+      return dir === 'asc' ? result : -result
+    })
+  }, [users, search, sort, dir])
+
+  const handleSort = (field: UserSortField) => {
+    const nextDir: SortDirection =
+      sort === field && dir === 'asc' ? 'desc' : 'asc'
+
+    setSort(field)
+    setDir(nextDir)
+  }
 
   const handleSaved = (message: string) => {
     setError('')
-    setSuccess(message)
+    showToast(message)
     void loadUsers()
   }
 
@@ -111,7 +229,7 @@ export function UsersPage() {
 
     try {
       await updateUserStatus(statusTarget.id, !statusTarget.active)
-      setSuccess(
+      showToast(
         statusTarget.active
           ? 'Usuario desactivado correctamente'
           : 'Usuario activado correctamente',
@@ -133,13 +251,21 @@ export function UsersPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Usuarios
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Administre las cuentas y los roles con acceso al sistema.
-          </p>
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+            <Users className="size-5" />
+          </span>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Administración
+            </p>
+            <h1 className="mt-0.5 text-2xl font-semibold text-slate-900">
+              Usuarios
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Administre las cuentas y los roles con acceso al sistema.
+            </p>
+          </div>
         </div>
         <button
           type="button"
@@ -168,12 +294,6 @@ export function UsersPage() {
         </div>
       )}
 
-      {success && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {success}
-        </div>
-      )}
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -182,7 +302,8 @@ export function UsersPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Buscar por nombre o correo"
-            className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            aria-label="Buscar usuarios por nombre o correo"
+            className={`${inputClass} pl-9`}
           />
         </div>
         <p className="text-xs text-slate-500">
@@ -190,7 +311,7 @@ export function UsersPage() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5">
         {isLoading ? (
           <div className="flex items-center justify-center gap-3 py-16 text-sm text-slate-500">
             <Loader2 className="size-5 animate-spin" />
@@ -210,29 +331,16 @@ export function UsersPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Usuario</th>
-                  <th className="px-4 py-3 font-medium">Rol</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="hidden px-4 py-3 font-medium md:table-cell">
-                    Creado
-                  </th>
-                  <th className="px-4 py-3 text-right font-medium">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {filteredUsers.map((user) => {
-                  const isSelf = user.id === currentUser?.id
+          <>
+            <ul className="divide-y divide-slate-100 md:hidden">
+              {filteredUsers.map((user) => {
+                const isSelf = user.id === currentUser?.id
 
-                  return (
-                    <tr key={user.id} className="hover:bg-amber-50/40">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-slate-900">
+                return (
+                  <li key={user.id} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">
                           {user.name}
                           {isSelf && (
                             <span className="ml-2 text-xs font-normal text-slate-500">
@@ -240,61 +348,143 @@ export function UsersPage() {
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">{user.email}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={user.role === 'ADMIN' ? 'blue' : 'slate'}>
-                          {roleLabels[user.role]}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={user.active ? 'green' : 'red'}>
-                          {user.active ? 'Activo' : 'Inactivo'}
-                        </Badge>
-                      </td>
-                      <td className="hidden px-4 py-3 text-slate-600 md:table-cell">
-                        {formatDate(user.createdAt)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setEditingUser(user)}
-                            className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-amber-50"
-                          >
-                            <Pencil className="size-3.5" />
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setStatusTarget(user)}
-                            disabled={isSelf}
-                            title={
-                              isSelf
-                                ? 'No puede desactivar su propio usuario'
-                                : undefined
-                            }
-                            className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                              user.active
-                                ? 'border-red-200 text-red-700 hover:bg-red-50'
-                                : 'border-slate-200 text-slate-600 hover:bg-amber-50'
-                            }`}
-                          >
-                            {user.active ? (
-                              <UserX className="size-3.5" />
-                            ) : (
-                              <UserCheck className="size-3.5" />
+                        <p className="mt-0.5 break-all text-xs text-slate-500">
+                          {user.email}
+                        </p>
+                      </div>
+                      <Badge tone={user.active ? 'green' : 'red'}>
+                        {user.active ? 'Activo' : 'Inactivo'}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge
+                        tone={user.role === 'ADMIN' ? 'blue' : 'slate'}
+                      >
+                        {roleLabels[user.role]}
+                      </Badge>
+                      <span className="text-[11px] text-slate-500">
+                        Creado el {formatDate(user.createdAt)}
+                      </span>
+                    </div>
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <UserActions
+                        user={user}
+                        isSelf={isSelf}
+                        onEdit={() => setEditingUser(user)}
+                        onToggleStatus={() => setStatusTarget(user)}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+
+            <div
+              role="region"
+              aria-label="Tabla de usuarios, desplazable horizontalmente"
+              tabIndex={0}
+              className="scrollbar-thin hidden max-h-[34rem] overflow-auto md:block"
+            >
+              <table
+                aria-label="Usuarios del sistema"
+                className="min-w-full divide-y divide-slate-200 text-left text-sm"
+              >
+                <caption className="sr-only">
+                  Usuarios registrados, su rol, estado y acciones
+                  disponibles
+                </caption>
+                <thead className="sticky top-0 z-10 bg-slate-50/95 text-xs uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                  <tr>
+                    <SortableHeader
+                      label="Usuario"
+                      field="name"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Rol"
+                      field="role"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Estado"
+                      field="active"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <SortableHeader
+                      label="Creado"
+                      field="createdAt"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleSort}
+                    />
+                    <th
+                      scope="col"
+                      className="px-4 py-3 text-right font-semibold"
+                    >
+                      Acciones
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filteredUsers.map((user) => {
+                    const isSelf = user.id === currentUser?.id
+
+                    return (
+                      <tr
+                        key={user.id}
+                        className="transition hover:bg-amber-50/40"
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-900">
+                            {user.name}
+                            {isSelf && (
+                              <span className="ml-2 text-xs font-normal text-slate-500">
+                                (tú)
+                              </span>
                             )}
-                            {user.active ? 'Desactivar' : 'Activar'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {user.email}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            tone={
+                              user.role === 'ADMIN' ? 'blue' : 'slate'
+                            }
+                          >
+                            {roleLabels[user.role]}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge tone={user.active ? 'green' : 'red'}>
+                            {user.active ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {formatDate(user.createdAt)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <UserActions
+                            user={user}
+                            isSelf={isSelf}
+                            onEdit={() => setEditingUser(user)}
+                            onToggleStatus={() => setStatusTarget(user)}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

@@ -18,8 +18,11 @@ export function Pagination({
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-      <p>
+    <nav
+      aria-label="Paginación de resultados"
+      className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <p aria-live="polite">
         {total} registro{total === 1 ? '' : 's'} · Página {page} de{' '}
         {Math.max(totalPages, 1)}
       </p>
@@ -28,7 +31,7 @@ export function Pagination({
           type="button"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-amber-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ChevronLeft className="size-4" />
           Anterior
@@ -37,12 +40,12 @@ export function Pagination({
           type="button"
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-amber-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Siguiente
           <ChevronRight className="size-4" />
         </button>
       </div>
-    </div>
+    </nav>
   )
 }

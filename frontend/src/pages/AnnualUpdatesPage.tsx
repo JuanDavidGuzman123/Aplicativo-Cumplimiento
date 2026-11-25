@@ -1,15 +1,20 @@
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
+  ArrowUpDown,
   Ban,
   Building2,
   CalendarCheck,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   Download,
   Loader2,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Users,
   XCircle,
   type LucideIcon,
@@ -17,6 +22,7 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from 'react'
@@ -24,6 +30,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Badge, type BadgeTone } from '../components/Badge'
 import { ExternalDataStatusBadge } from '../components/ExternalDataStatusBadge'
 import { Pagination } from '../components/Pagination'
+import { useToast } from '../components/toast-context'
 import { useExternalDataEvents } from '../hooks/useExternalDataEvents'
 import {
   downloadExternalReport,
@@ -32,16 +39,22 @@ import {
   getExternalUpdatesDue,
   syncExternalData,
 } from '../services/external-data'
-import type {
-  ExternalAnnualStatus as AnnualStatus,
-  ExternalDueListResponse as AnnualUpdatesDueResponse,
-  ExternalListParams as AnnualUpdateListParams,
-  ExternalAnnualListResponse as AnnualUpdateListResponse,
-  ExternalReportMetric,
-  ExternalSource,
-  ExternalSummary as AnnualUpdateSummary,
-  ExternalUpdateFilter as AnnualUpdateFilter,
-  ExternalUpdateSituation as AnnualUpdateSituation,
+import {
+  EXTERNAL_DUE_SORT_FIELDS,
+  EXTERNAL_SORT_FIELDS,
+  SORT_DIRECTIONS,
+  type ExternalAnnualStatus as AnnualStatus,
+  type ExternalDueListResponse as AnnualUpdatesDueResponse,
+  type ExternalDueSortField,
+  type ExternalListParams as AnnualUpdateListParams,
+  type ExternalAnnualListResponse as AnnualUpdateListResponse,
+  type ExternalReportMetric,
+  type ExternalSortField,
+  type ExternalSource,
+  type ExternalSummary as AnnualUpdateSummary,
+  type ExternalUpdateFilter as AnnualUpdateFilter,
+  type ExternalUpdateSituation as AnnualUpdateSituation,
+  type SortDirection,
 } from '../types/external-data'
 import { getApiErrorMessage } from '../utils/api-error'
 import { formatDate } from '../utils/labels'
@@ -68,7 +81,7 @@ const sourceCopy: Record<
   }
 > = {
   arriendos: {
-    title: 'Actualizacion Anual Arriendos',
+    title: 'Actualización Anual Arriendos',
     description:
       'Consulte el estado de la actualización anual de los puntos de venta y sus vencimientos desde el libro externo. Este proceso es independiente del seguimiento semestral.',
     entity: 'Puntos de venta',
@@ -76,7 +89,7 @@ const sourceCopy: Record<
     followUpLabel: 'Contrapartes en seguimiento',
   },
   clientes: {
-    title: 'Actualizacion Anual Clientes',
+    title: 'Actualización Anual Clientes',
     description:
       'Consulte el estado de la actualización anual de los clientes corporativos y sus vencimientos desde FR-SG-80. El seguimiento semestral se gestiona por separado.',
     entity: 'Clientes',
@@ -95,7 +108,7 @@ const reportLabels: Record<ExternalReportMetric, string> = {
 }
 
 const sectionClass =
-  'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5'
+  'overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-900/5'
 
 const sectionHeaderClass =
   'flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between'
@@ -177,6 +190,121 @@ function formatDays(days: number | null): string {
   return `${days} día${days === 1 ? '' : 's'}`
 }
 
+const annualStatusValues: AnnualStatus[] = ['ACTIVE', 'INACTIVE']
+const updateFilterValues: AnnualUpdateFilter[] = [
+  'UPDATED_THIS_YEAR',
+  'PENDING',
+  'NO_DATE',
+]
+
+function parsePositiveParam(value: string | null, fallback = 1) {
+  const parsed = Number(value)
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function parseEnumParam<T extends string>(
+  value: string | null,
+  allowed: readonly T[],
+): T | '' {
+  return value && allowed.includes(value as T) ? (value as T) : ''
+}
+
+type AnnualUrlState = {
+  code: string
+  search: string
+  filters: AnnualUpdateListParams
+  sort: ExternalSortField
+  dir: SortDirection
+  dueSort: ExternalDueSortField
+  dueDir: SortDirection
+  page: number
+  duePage: number
+}
+
+function readAnnualUrlState(searchParamsKey: string): AnnualUrlState {
+  const params = new URLSearchParams(searchParamsKey)
+  const code = params.get('code') ?? ''
+  const followUp = params.get('followUp')
+
+  return {
+    code,
+    search: code || params.get('search') || '',
+    filters: {
+      code: code || undefined,
+      search: code ? '' : params.get('search') || '',
+      status: parseEnumParam(params.get('status'), annualStatusValues),
+      annualStatus: parseEnumParam(
+        params.get('annualStatus'),
+        updateFilterValues,
+      ),
+      requiresSemiannualFollowUp:
+        followUp === 'true' ? true : followUp === 'false' ? false : '',
+    },
+    sort: parseEnumParam(params.get('sort'), EXTERNAL_SORT_FIELDS) || 'status',
+    dir: parseEnumParam(params.get('dir'), SORT_DIRECTIONS) || 'asc',
+    dueSort:
+      parseEnumParam(params.get('dueSort'), EXTERNAL_DUE_SORT_FIELDS) ||
+      'daysUntilDue',
+    dueDir: parseEnumParam(params.get('dueDir'), SORT_DIRECTIONS) || 'asc',
+    page: code ? 1 : parsePositiveParam(params.get('page')),
+    duePage: parsePositiveParam(params.get('duePage')),
+  }
+}
+
+function setOrDeleteParam(
+  params: URLSearchParams,
+  key: string,
+  value: string | number,
+) {
+  const normalized = String(value)
+
+  if (normalized) {
+    params.set(key, normalized)
+  } else {
+    params.delete(key)
+  }
+}
+
+type SortableHeaderProps = {
+  label: string
+  field: string
+  sort: string
+  dir: SortDirection
+  onSort: (field: string) => void
+}
+
+function SortableHeader({
+  label,
+  field,
+  sort,
+  dir,
+  onSort,
+}: SortableHeaderProps) {
+  const isActive = sort === field
+  const Icon = isActive
+    ? dir === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
+
+  return (
+    <th scope="col" className="px-4 py-3">
+      <button
+        type="button"
+        onClick={() => onSort(field)}
+        className={`inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 transition hover:bg-slate-200/70 hover:text-slate-900 ${
+          isActive ? 'text-emerald-800' : ''
+        }`}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        <Icon className="size-3.5" />
+      </button>
+    </th>
+  )
+}
+
 type AnnualUpdatesPageProps = {
   source?: ExternalSource
 }
@@ -185,8 +313,16 @@ export function AnnualUpdatesPage({
   source = 'arriendos',
 }: AnnualUpdatesPageProps) {
   const pageCopy = sourceCopy[source]
+  const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
+  const searchParamsKey = searchParams.toString()
+  const [initialUrlState] = useState<AnnualUrlState>(() =>
+    readAnnualUrlState(searchParamsKey),
+  )
+  const lastSyncedParamsRef = useRef(searchParamsKey)
   const codeFromNotification = searchParams.get('code') ?? ''
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [fallbackYear] = useState(() =>
     new Date().getFullYear(),
   )
@@ -203,7 +339,7 @@ export function AnnualUpdatesPage({
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState('')
   const [listRefreshKey, setListRefreshKey] = useState(0)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(initialUrlState.page)
 
   const [due, setDue] = useState<AnnualUpdatesDueResponse | null>(
     null,
@@ -211,33 +347,107 @@ export function AnnualUpdatesPage({
   const [dueLoading, setDueLoading] = useState(true)
   const [dueError, setDueError] = useState('')
   const [dueRefreshKey, setDueRefreshKey] = useState(0)
-  const [duePage, setDuePage] = useState(1)
+  const [duePage, setDuePage] = useState(
+    initialUrlState.duePage,
+  )
 
   const [searchDraft, setSearchDraft] = useState(
-    codeFromNotification,
+    initialUrlState.search,
   )
-  const [filters, setFilters] = useState<AnnualUpdateListParams>({
-    code: codeFromNotification || undefined,
-    search: '',
-    status: '',
-    annualStatus: '',
-    requiresSemiannualFollowUp: '',
-  })
+  const [filters, setFilters] = useState<AnnualUpdateListParams>(
+    initialUrlState.filters,
+  )
+  const [sort, setSort] = useState<ExternalSortField>(
+    initialUrlState.sort,
+  )
+  const [dir, setDir] = useState<SortDirection>(
+    initialUrlState.dir,
+  )
+  const [dueSort, setDueSort] = useState<ExternalDueSortField>(
+    initialUrlState.dueSort,
+  )
+  const [dueDir, setDueDir] = useState<SortDirection>(
+    initialUrlState.dueDir,
+  )
 
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState('')
 
-  const clearNotificationCode = () => {
-    if (!codeFromNotification) {
+  const writeUrlState = (
+    updates: Partial<AnnualUrlState> & { clearCode?: boolean },
+  ) => {
+    const next = new URLSearchParams(searchParamsKey)
+
+    if (updates.clearCode) {
+      next.delete('code')
+    }
+    if (updates.search !== undefined) {
+      setOrDeleteParam(next, 'search', updates.search.trim())
+    }
+    if (updates.filters) {
+      setOrDeleteParam(next, 'status', updates.filters.status ?? '')
+      setOrDeleteParam(
+        next,
+        'annualStatus',
+        updates.filters.annualStatus ?? '',
+      )
+      setOrDeleteParam(
+        next,
+        'followUp',
+        updates.filters.requiresSemiannualFollowUp === ''
+          ? ''
+          : String(updates.filters.requiresSemiannualFollowUp),
+      )
+    }
+    if (updates.sort !== undefined) {
+      setOrDeleteParam(next, 'sort', updates.sort)
+    }
+    if (updates.dir !== undefined) {
+      setOrDeleteParam(next, 'dir', updates.dir)
+    }
+    if (updates.dueSort !== undefined) {
+      setOrDeleteParam(next, 'dueSort', updates.dueSort)
+    }
+    if (updates.dueDir !== undefined) {
+      setOrDeleteParam(next, 'dueDir', updates.dueDir)
+    }
+    if (updates.page !== undefined) {
+      setOrDeleteParam(next, 'page', updates.page === 1 ? '' : updates.page)
+    }
+    if (updates.duePage !== undefined) {
+      setOrDeleteParam(
+        next,
+        'duePage',
+        updates.duePage === 1 ? '' : updates.duePage,
+      )
+    }
+
+    const nextKey = next.toString()
+    lastSyncedParamsRef.current = nextKey
+    setSearchParams(next, { replace: true })
+  }
+
+  useEffect(() => {
+    if (searchParamsKey === lastSyncedParamsRef.current) {
       return
     }
 
-    const next = new URLSearchParams(searchParams)
-    next.delete('code')
-    setSearchParams(next, { replace: true })
-  }
+    lastSyncedParamsRef.current = searchParamsKey
+    const next = readAnnualUrlState(searchParamsKey)
+
+    setSearchDraft(next.search)
+    setFilters(next.filters)
+    setSort(next.sort)
+    setDir(next.dir)
+    setDueSort(next.dueSort)
+    setDueDir(next.dueDir)
+    setPage(next.page)
+    setDuePage(next.duePage)
+    setListLoading(true)
+    setDueLoading(true)
+  }, [searchParamsKey])
 
   const refreshSummary = () => {
     setSummaryLoading(true)
@@ -306,10 +516,12 @@ export function AnnualUpdatesPage({
             ...filters,
             code: codeFromNotification,
             search: '',
+            sort,
+            dir,
             page: 1,
           }
-        : { ...filters, page },
-    [codeFromNotification, filters, page],
+        : { ...filters, sort, dir, page },
+    [codeFromNotification, filters, page, sort, dir],
   )
 
   useEffect(() => {
@@ -365,6 +577,8 @@ export function AnnualUpdatesPage({
       {
         page: duePage,
         pageSize: DUE_PAGE_SIZE,
+        sort: dueSort,
+        dir: dueDir,
       },
       source,
     )
@@ -396,7 +610,14 @@ export function AnnualUpdatesPage({
     return () => {
       active = false
     }
-  }, [duePage, dueRefreshKey, setExternalStatus, source])
+  }, [
+    duePage,
+    dueRefreshKey,
+    dueSort,
+    dueDir,
+    setExternalStatus,
+    source,
+  ])
 
   useEffect(() => {
     if (!codeFromNotification) {
@@ -410,6 +631,31 @@ export function AnnualUpdatesPage({
 
   const currentYear = summary?.currentYear ?? fallbackYear
   const minimumDueYear = currentYear - 1
+  const compactSummary = summary
+    ? [
+        {
+          label: 'Activos',
+          value: summary.totals.active,
+        },
+        {
+          label: 'Actualizados',
+          value: summary.annual.updatedThisYear,
+        },
+        {
+          label: 'Pendientes',
+          value: summary.annual.active.pendingUpdate,
+        },
+      ]
+    : []
+  const activeFilterCount = [
+    (codeFromNotification || searchDraft).trim(),
+    filters.status ?? '',
+    filters.annualStatus ?? '',
+    filters.requiresSemiannualFollowUp === '' ||
+    filters.requiresSemiannualFollowUp === undefined
+      ? ''
+      : String(filters.requiresSemiannualFollowUp),
+  ].filter(Boolean).length
 
   const handleReport = async (metric: ExternalReportMetric) => {
     setReportLoading(true)
@@ -417,6 +663,7 @@ export function AnnualUpdatesPage({
 
     try {
       await downloadExternalReport(metric, source)
+      showToast('Reporte generado y descargado correctamente.')
     } catch (reportFailure) {
       setReportError(
         getApiErrorMessage(
@@ -476,14 +723,23 @@ export function AnnualUpdatesPage({
 
   const handleFilterSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    clearNotificationCode()
-    setListLoading(true)
-    setPage(1)
-    setFilters((current) => ({
-      ...current,
+    const nextSearch = (codeFromNotification || searchDraft).trim()
+    const nextFilters: AnnualUpdateListParams = {
+      ...filters,
       code: undefined,
-      search: (codeFromNotification || searchDraft).trim(),
-    }))
+      search: nextSearch,
+    }
+
+    setListLoading(true)
+    setSearchDraft(nextSearch)
+    setPage(1)
+    setFilters(nextFilters)
+    writeUrlState({
+      clearCode: true,
+      search: nextSearch,
+      filters: nextFilters,
+      page: 1,
+    })
   }
 
   const handleFilterChange = (
@@ -497,25 +753,72 @@ export function AnnualUpdatesPage({
           : value === 'true'
         : value
 
+    const nextFilters: AnnualUpdateListParams = {
+      ...filters,
+      [field]: nextValue,
+    }
+
     setListLoading(true)
     setPage(1)
-    setFilters((current) => ({
-      ...current,
-      [field]: nextValue,
-    }))
+    setFilters(nextFilters)
+    writeUrlState({
+      clearCode: true,
+      search: codeFromNotification || searchDraft,
+      filters: nextFilters,
+      page: 1,
+    })
   }
 
   const handleClearFilters = () => {
-    clearNotificationCode()
-    setListLoading(true)
-    setSearchDraft('')
-    setPage(1)
-    setFilters({
+    const emptyFilters: AnnualUpdateListParams = {
       code: undefined,
       search: '',
       status: '',
       annualStatus: '',
       requiresSemiannualFollowUp: '',
+    }
+
+    setListLoading(true)
+    setSearchDraft('')
+    setPage(1)
+    setDuePage(1)
+    setFilters(emptyFilters)
+    writeUrlState({
+      clearCode: true,
+      search: '',
+      filters: emptyFilters,
+      page: 1,
+      duePage: 1,
+    })
+  }
+
+  const handleListSort = (field: string) => {
+    const nextSort = field as ExternalSortField
+    const nextDir: SortDirection =
+      sort === nextSort && dir === 'asc' ? 'desc' : 'asc'
+
+    setListLoading(true)
+    setPage(1)
+    setSort(nextSort)
+    setDir(nextDir)
+    writeUrlState({
+      sort: nextSort,
+      dir: nextDir,
+      page: 1,
+    })
+  }
+
+  const handleDueSort = (field: string) => {
+    const nextSort = field as ExternalDueSortField
+    const nextDir: SortDirection =
+      dueSort === nextSort && dueDir === 'asc' ? 'desc' : 'asc'
+
+    setDueLoading(true)
+    setDueSort(nextSort)
+    setDueDir(nextDir)
+    writeUrlState({
+      dueSort: nextSort,
+      dueDir: nextDir,
     })
   }
 
@@ -526,6 +829,7 @@ export function AnnualUpdatesPage({
     try {
       const nextStatus = await syncExternalData(source)
       setExternalStatus(nextStatus)
+      showToast('Libro externo sincronizado correctamente.')
       refreshAll()
     } catch (syncFailure) {
       setSyncError(
@@ -575,8 +879,43 @@ export function AnnualUpdatesPage({
           </div>
         )}
 
+        {summary && (
+          <div className="space-y-2 sm:hidden">
+            <div className="grid grid-cols-3 gap-2">
+              {compactSummary.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSummaryExpanded((value) => !value)}
+              className="inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50"
+              aria-expanded={summaryExpanded}
+            >
+              {summaryExpanded
+                ? 'Ocultar indicadores'
+                : 'Ver todos los indicadores'}
+              <ChevronDown
+                className={`size-4 transition-transform ${
+                  summaryExpanded ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+          </div>
+        )}
+
         {summaryLoading && !summary ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {Array.from({ length: 5 }, (_, index) => (
               <div
                 key={index}
@@ -585,7 +924,7 @@ export function AnnualUpdatesPage({
             ))}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {statCards.map(
               ({
                 label,
@@ -697,9 +1036,42 @@ export function AnnualUpdatesPage({
           </button>
         </div>
 
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-5 py-3 sm:hidden">
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((value) => !value)}
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-amber-300 hover:bg-amber-50"
+            aria-expanded={filtersOpen}
+            aria-controls="annual-filters"
+          >
+            <SlidersHorizontal className="size-4" />
+            Filtros
+            {activeFilterCount > 0 && (
+              <span className="flex size-5 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800">
+                {activeFilterCount}
+              </span>
+            )}
+            <ChevronDown
+              className={`size-4 transition-transform ${
+                filtersOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="text-xs font-semibold text-slate-500 underline transition hover:text-slate-900"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
+
         <form
+          id="annual-filters"
           onSubmit={handleFilterSubmit}
-          className="grid gap-4 border-b border-slate-200 p-5 sm:grid-cols-2 lg:grid-cols-5"
+          className={`${filtersOpen ? 'grid' : 'hidden'} gap-4 border-b border-slate-200 p-5 sm:grid sm:grid-cols-2 lg:grid-cols-5`}
         >
           <div className="sm:col-span-2">
             <label className={labelClass} htmlFor="annual-search">
@@ -840,19 +1212,170 @@ export function AnnualUpdatesPage({
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="min-w-[1100px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <ul className="divide-y divide-slate-100 xl:hidden">
+              {list.data.map((row) => (
+                <li
+                  key={row.id}
+                  className={`p-4 ${
+                    row.code === codeFromNotification
+                      ? 'bg-blue-50/60'
+                      : ''
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        {row.code}
+                      </p>
+                      <p className="mt-0.5 font-semibold text-slate-900">
+                        {row.businessName}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge tone={annualStatusTones[row.status]}>
+                        {annualStatusLabels[row.status]}
+                      </Badge>
+                      <Badge
+                        tone={updateFilterTones[row.annualStatus]}
+                      >
+                        {updateFilterLabels[row.annualStatus]}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs sm:grid-cols-3">
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Fecha
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatDate(row.filingDate)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Año
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {row.filingYear ?? '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Tipo
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {row.dueDiligenceType ?? '—'}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-medium text-slate-500">
+                      Seguimiento:
+                    </span>
+                    {row.requiresSemiannualFollowUp === null ? (
+                      <span className="text-xs text-slate-400">
+                        Sin dato
+                      </span>
+                    ) : (
+                      <Badge
+                        tone={
+                          row.requiresSemiannualFollowUp
+                            ? 'blue'
+                            : 'slate'
+                        }
+                      >
+                        {formatFollowUp(
+                          row.requiresSemiannualFollowUp,
+                        )}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-slate-500">
+                      Observaciones
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-600">
+                      {row.observations || 'Sin observaciones registradas.'}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            <div
+              role="region"
+              aria-label={`Tabla de ${pageCopy.entityLower} anuales, desplazable horizontalmente`}
+              tabIndex={0}
+              className="scrollbar-thin hidden max-h-[34rem] overflow-auto xl:block"
+            >
+              <table
+                aria-label={`${pageCopy.entity} con actualización anual`}
+                className="min-w-[1100px] divide-y divide-slate-200 text-sm"
+              >
+                <caption className="sr-only">
+                  {pageCopy.entity} con estado, fecha, año, tipo,
+                  seguimiento, observaciones y estado anual
+                </caption>
+                <thead className="sticky top-0 z-10 bg-slate-50/95 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
                   <tr>
-                    <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">Estado</th>
-                    <th className="px-4 py-3">Fecha</th>
-                    <th className="px-4 py-3">Año</th>
-                    <th className="px-4 py-3">Tipo</th>
-                    <th className="px-4 py-3">Seguimiento</th>
-                    <th className="px-4 py-3">Observaciones</th>
-                    <th className="px-4 py-3">Estado anual</th>
+                    <SortableHeader
+                      label="Código"
+                      field="code"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <SortableHeader
+                      label="Nombre"
+                      field="businessName"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <SortableHeader
+                      label="Estado"
+                      field="status"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <SortableHeader
+                      label="Fecha"
+                      field="filingDate"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <SortableHeader
+                      label="Año"
+                      field="filingYear"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <th scope="col" className="px-4 py-3">
+                      Tipo
+                    </th>
+                    <SortableHeader
+                      label="Seguimiento"
+                      field="followUp"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
+                    <th scope="col" className="px-4 py-3">
+                      Observaciones
+                    </th>
+                    <SortableHeader
+                      label="Estado anual"
+                      field="annualStatus"
+                      sort={sort}
+                      dir={dir}
+                      onSort={handleListSort}
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -862,7 +1385,7 @@ export function AnnualUpdatesPage({
                       className={
                         row.code === codeFromNotification
                           ? 'bg-blue-50/60'
-                          : undefined
+                          : 'transition hover:bg-amber-50/40'
                       }
                     >
                       <td className="px-4 py-3 font-medium text-slate-900">
@@ -872,9 +1395,7 @@ export function AnnualUpdatesPage({
                         {row.businessName}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          tone={annualStatusTones[row.status]}
-                        >
+                        <Badge tone={annualStatusTones[row.status]}>
                           {annualStatusLabels[row.status]}
                         </Badge>
                       </td>
@@ -911,9 +1432,7 @@ export function AnnualUpdatesPage({
                       </td>
                       <td className="px-4 py-3">
                         <Badge
-                          tone={
-                            updateFilterTones[row.annualStatus]
-                          }
+                          tone={updateFilterTones[row.annualStatus]}
                         >
                           {updateFilterLabels[row.annualStatus]}
                         </Badge>
@@ -930,6 +1449,7 @@ export function AnnualUpdatesPage({
               onPageChange={(nextPage) => {
                 setListLoading(true)
                 setPage(nextPage)
+                writeUrlState({ page: nextPage })
               }}
             />
           </>
@@ -950,7 +1470,7 @@ export function AnnualUpdatesPage({
                 Solo contrapartes activas con diligenciamiento desde{' '}
                 {minimumDueYear}. La fecha límite es la fecha de
                 diligenciamiento más un año; los recordatorios se envían
-                a los 3 y 1 días.
+                a los 15, 5, 1 y 0 días.
               </p>
             </div>
           </div>
@@ -1035,20 +1555,105 @@ export function AnnualUpdatesPage({
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
-              <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <ul className="divide-y divide-slate-100 xl:hidden">
+              {due.data.map((row) => (
+                <li key={row.id} className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        {row.code}
+                      </p>
+                      <p className="mt-0.5 font-semibold text-slate-900">
+                        {row.businessName}
+                      </p>
+                    </div>
+                    <Badge
+                      tone={annualSituationTones[row.situation]}
+                    >
+                      {annualSituationLabels[row.situation]}
+                    </Badge>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-amber-50/60 p-3 text-xs">
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Fecha límite
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatDate(row.dueDate)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-slate-500">
+                        Días
+                      </dt>
+                      <dd className="mt-1 font-semibold text-slate-800">
+                        {formatDays(row.daysUntilDue)}
+                      </dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+
+            <div
+              role="region"
+              aria-label="Tabla de vencimientos anuales, desplazable horizontalmente"
+              tabIndex={0}
+              className="scrollbar-thin hidden max-h-[34rem] overflow-auto xl:block"
+            >
+              <table
+                aria-label="Actualizaciones anuales vencidas y por vencer"
+                className="min-w-[760px] divide-y divide-slate-200 text-sm"
+              >
+                <caption className="sr-only">
+                  Contrapartes con actualización anual vencida o próxima,
+                  fecha límite, días restantes y situación
+                </caption>
+                <thead className="sticky top-0 z-10 bg-slate-50/95 text-left text-xs font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
                   <tr>
-                    <th className="px-4 py-3">Código</th>
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">Fecha límite</th>
-                    <th className="px-4 py-3">Días</th>
-                    <th className="px-4 py-3">Situación</th>
+                    <SortableHeader
+                      label="Código"
+                      field="code"
+                      sort={dueSort}
+                      dir={dueDir}
+                      onSort={handleDueSort}
+                    />
+                    <SortableHeader
+                      label="Nombre"
+                      field="businessName"
+                      sort={dueSort}
+                      dir={dueDir}
+                      onSort={handleDueSort}
+                    />
+                    <SortableHeader
+                      label="Fecha límite"
+                      field="dueDate"
+                      sort={dueSort}
+                      dir={dueDir}
+                      onSort={handleDueSort}
+                    />
+                    <SortableHeader
+                      label="Días"
+                      field="daysUntilDue"
+                      sort={dueSort}
+                      dir={dueDir}
+                      onSort={handleDueSort}
+                    />
+                    <SortableHeader
+                      label="Situación"
+                      field="situation"
+                      sort={dueSort}
+                      dir={dueDir}
+                      onSort={handleDueSort}
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {due.data.map((row) => (
-                    <tr key={row.id}>
+                    <tr
+                      key={row.id}
+                      className="transition hover:bg-amber-50/40"
+                    >
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {row.code}
                       </td>
@@ -1063,15 +1668,9 @@ export function AnnualUpdatesPage({
                       </td>
                       <td className="px-4 py-3">
                         <Badge
-                          tone={
-                            annualSituationTones[row.situation]
-                          }
+                          tone={annualSituationTones[row.situation]}
                         >
-                          {
-                            annualSituationLabels[
-                              row.situation
-                            ]
-                          }
+                          {annualSituationLabels[row.situation]}
                         </Badge>
                       </td>
                     </tr>
@@ -1086,6 +1685,7 @@ export function AnnualUpdatesPage({
               onPageChange={(nextPage) => {
                 setDueLoading(true)
                 setDuePage(nextPage)
+                writeUrlState({ duePage: nextPage })
               }}
             />
           </>

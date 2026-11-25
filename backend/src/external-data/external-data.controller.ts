@@ -37,6 +37,8 @@ export class ExternalDataController {
   @Get('updates-due')
   getUpdatesDue(@Query() query: ListExternalUpdatesDueQueryDto) {
     return this.dataService.getUpdatesDue({
+      sort: query.sort,
+      dir: query.dir,
       page: query.page,
       pageSize: query.pageSize,
     })
@@ -93,6 +95,8 @@ export class ExternalDataController {
       status: query.status as never,
       annualStatus: query.annualStatus as never,
       requiresSemiannualFollowUp: query.requiresSemiannualFollowUp,
+      sort: query.sort,
+      dir: query.dir,
       page: query.page,
       pageSize: query.pageSize,
     })
@@ -192,6 +196,8 @@ export class ExternalClientesDataController {
         status: query.status as never,
         annualStatus: query.annualStatus as never,
         requiresSemiannualFollowUp: query.requiresSemiannualFollowUp,
+        sort: query.sort,
+        dir: query.dir,
         page: query.page,
         pageSize: query.pageSize,
       },

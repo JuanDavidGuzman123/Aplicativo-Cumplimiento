@@ -8,9 +8,10 @@ import {
   RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge } from './Badge'
+import { useToast } from './toast-context'
 import { useNotificationFeed } from '../hooks/useNotificationFeed'
 import {
   getAnnualNotifications,
@@ -83,14 +84,16 @@ function getCategorySections(
   items: AlertGroup[],
   process: NotificationProcess,
 ) {
-  return sourceOrder[process].map((source) => ({
-    key: `${process}:${source}`,
-    source,
-    label: `${notificationProcessLabels[process]} · ${notificationSourceLabels[source]}`,
-    items: items.filter(
-      (item) => item.process === process && item.source === source,
-    ),
-  }))
+  return sourceOrder[process]
+    .map((source) => ({
+      key: `${process}:${source}`,
+      source,
+      label: `${notificationProcessLabels[process]} · ${notificationSourceLabels[source]}`,
+      items: items.filter(
+        (item) => item.process === process && item.source === source,
+      ),
+    }))
+    .filter((category) => category.items.length > 0)
 }
 
 type AlertMenuProps = {
@@ -121,10 +124,17 @@ function AlertMenu({
   setIsLoading,
 }: AlertMenuProps) {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [markingGroupKey, setMarkingGroupKey] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+
+  const closeMenu = useCallback(() => {
+    setOpen(false)
+    window.requestAnimationFrame(() => triggerRef.current?.focus())
+  }, [])
 
   useEffect(() => {
     if (!open) {
@@ -136,13 +146,13 @@ function AlertMenu({
         containerRef.current &&
         !containerRef.current.contains(event.target as Node)
       ) {
-        setOpen(false)
+        closeMenu()
       }
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setOpen(false)
+        closeMenu()
       }
     }
 
@@ -153,7 +163,7 @@ function AlertMenu({
       document.removeEventListener('mousedown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open])
+  }, [open, closeMenu])
 
   const items = useMemo(
     () =>
@@ -201,9 +211,10 @@ function AlertMenu({
           .map((member) => markRead(member.id)),
       )
       await refresh()
+      showToast('Alertas marcadas como leídas.')
 
       if (navigateAfter) {
-        setOpen(false)
+        closeMenu()
         navigate(item.navigatePath)
       }
 
@@ -230,8 +241,10 @@ function AlertMenu({
         key={item.key}
         className={`border-l-4 ${style.border} ${style.row}`}
       >
-        <div className="flex items-start gap-3 px-4 py-3">
-          <span className={`mt-0.5 ${style.icon}`}>
+        <div className="flex items-start gap-3 px-4 py-3.5">
+          <span
+            className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm ${style.icon}`}
+          >
             {process === 'FOLLOW_UP' ? (
               <ClipboardCheck className="size-4" />
             ) : (
@@ -286,8 +299,8 @@ function AlertMenu({
                   void markGroupAsRead(item)
                 }}
                 disabled={isMarking}
-                className="rounded-md p-1.5 text-slate-500 transition hover:bg-white hover:text-slate-900 disabled:opacity-60"
-                aria-label="Marcar alerta como leída"
+                className="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-emerald-900 disabled:opacity-60"
+                aria-label={`Marcar como leída la alerta de ${item.counterpartyLabel}`}
                 title="Marcar como leída"
               >
                 <CheckCheck className="size-4" />
@@ -305,6 +318,7 @@ function AlertMenu({
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           const nextOpen = !open
@@ -314,7 +328,11 @@ function AlertMenu({
             refreshAll()
           }
         }}
-        className="relative inline-flex items-center gap-1.5 rounded-md px-2 py-2 text-xs font-medium text-slate-600 transition hover:bg-amber-50 hover:text-slate-900"
+        className={`relative inline-flex min-h-10 items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-semibold shadow-sm transition ${
+          open
+            ? 'border-amber-300 bg-amber-50 text-emerald-900 ring-2 ring-amber-100'
+            : 'border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50 hover:text-slate-950'
+        }`}
         aria-label={
           unreadCount > 0
             ? `${title}, ${unreadCount} sin leer`
@@ -322,39 +340,61 @@ function AlertMenu({
         }
         aria-haspopup="true"
         aria-expanded={open}
+        aria-controls={`panel-alertas-${process}`}
         title={title}
       >
-        <Icon className="size-5" />
+        <Icon className="size-4" />
         <span className="hidden sm:inline">{buttonLabel}</span>
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 py-0.5 text-[10px] font-semibold leading-none text-white">
+          <span
+            aria-hidden="true"
+            className="flex size-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold leading-none text-white"
+          >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="fixed inset-x-4 top-16 z-50 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-900/10 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-[min(24rem,calc(100vw-2rem))]">
-          <div className="border-b border-slate-200 px-4 py-3">
+        <div
+          id={`panel-alertas-${process}`}
+          role="region"
+          aria-label={title}
+          className="fixed inset-x-3 top-20 z-50 max-h-[calc(100dvh-6rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-[min(26rem,calc(100vw-2rem))]"
+        >
+          <div
+            className={`h-1 ${
+              process === 'FOLLOW_UP' ? 'bg-emerald-700' : 'bg-amber-400'
+            }`}
+          />
+          <div className="border-b border-slate-200 px-4 py-3.5">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Icon className="size-4 text-amber-600" />
-                  <p className="text-sm font-semibold text-slate-900">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${
+                    process === 'FOLLOW_UP'
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : 'bg-amber-50 text-amber-700'
+                  }`}
+                >
+                  <Icon className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">
                     {title}
                   </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {unreadCount > 0
+                      ? `${unreadCount} obligaciones sin leer`
+                      : 'Todo al día'}
+                  </p>
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {unreadCount > 0
-                    ? `${unreadCount} obligaciones sin leer`
-                    : 'Todo al día'}
-                </p>
               </div>
               <button
                 type="button"
                 onClick={refreshAll}
                 disabled={isLoading}
-                className="rounded-md p-1.5 text-slate-500 transition hover:bg-amber-50 hover:text-slate-900 disabled:opacity-60"
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-amber-200 hover:bg-amber-50 hover:text-slate-900 disabled:opacity-60"
                 aria-label={`Actualizar ${title.toLowerCase()}`}
               >
                 <RefreshCw
@@ -377,19 +417,21 @@ function AlertMenu({
             </div>
           )}
 
-          <div className="max-h-[min(32rem,calc(100vh-11rem))] overflow-y-auto">
+          <div className="scrollbar-thin max-h-[min(32rem,calc(100dvh-11rem))] overflow-y-auto">
             {isLoading && items.length === 0 ? (
               <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-slate-500">
                 <Loader2 className="size-4 animate-spin" />
                 Cargando alertas...
               </div>
             ) : statusSections.length === 0 ? (
-              <div className="px-4 py-10 text-center">
-                <Bell className="mx-auto size-8 text-amber-300" />
-                <p className="mt-2 text-sm font-medium text-slate-900">
+              <div className="px-6 py-10 text-center">
+                <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-amber-50 text-amber-500">
+                  <Bell className="size-5" />
+                </span>
+                <p className="mt-3 text-sm font-semibold text-slate-900">
                   No hay alertas activas
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mx-auto mt-1 max-w-64 text-xs leading-relaxed text-slate-500">
                   {emptyMessage}
                 </p>
               </div>
@@ -407,22 +449,27 @@ function AlertMenu({
                   {getCategorySections(section.items, process).map(
                     (category) => (
                       <div key={category.key}>
-                        <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-1.5">
-                          <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            {category.label}
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span
+                              className={`size-1.5 shrink-0 rounded-full ${
+                                category.source === 'clientes'
+                                  ? 'bg-blue-400'
+                                  : category.source === 'colocadores'
+                                    ? 'bg-emerald-500'
+                                    : 'bg-amber-400'
+                              }`}
+                            />
+                            <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              {category.label}
+                            </span>
                           </span>
                           <span className="text-[10px] font-medium text-slate-400">
                             {category.items.length}
                           </span>
                         </div>
                         <ul className="divide-y divide-slate-100">
-                          {category.items.length > 0 ? (
-                            category.items.map(renderAlertItem)
-                          ) : (
-                            <li className="px-4 py-2 text-[11px] text-slate-400">
-                              Sin alertas activas
-                            </li>
-                          )}
+                          {category.items.map(renderAlertItem)}
                         </ul>
                       </div>
                     ),

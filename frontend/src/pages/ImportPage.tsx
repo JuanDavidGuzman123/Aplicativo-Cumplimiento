@@ -15,6 +15,7 @@ import {
 } from 'react'
 import { Badge } from '../components/Badge'
 import { Pagination } from '../components/Pagination'
+import { useToast } from '../components/toast-context'
 import {
   confirmImport,
   getImport,
@@ -101,6 +102,7 @@ function rowHasDetails(row: ImportRowValidation) {
 }
 
 export function ImportPage() {
+  const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [batch, setBatch] = useState<ImportDetail | null>(null)
@@ -122,7 +124,6 @@ export function ImportPage() {
     null,
   )
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   const [history, setHistory] = useState<ImportListResponse | null>(
     null,
@@ -169,15 +170,6 @@ export function ImportPage() {
       active = false
     }
   }, [historyPage, historyRefreshKey])
-
-  useEffect(() => {
-    if (!success) {
-      return
-    }
-
-    const timeout = window.setTimeout(() => setSuccess(''), 4000)
-    return () => window.clearTimeout(timeout)
-  }, [success])
 
   const previewRows = validation?.rows ?? []
   const previewTotalPages = Math.max(
@@ -226,7 +218,6 @@ export function ImportPage() {
     }
 
     setError('')
-    setSuccess('')
     setSelectedFiles(files)
   }
 
@@ -240,7 +231,6 @@ export function ImportPage() {
 
     setIsUploading(true)
     setError('')
-    setSuccess('')
 
     try {
       const data = await uploadImportFiles(selectedFiles)
@@ -252,7 +242,7 @@ export function ImportPage() {
       }
 
       refreshHistory()
-      setSuccess(
+      showToast(
         'Archivos cargados. Revise el mapeo y valide la vista previa.',
       )
     } catch (uploadError) {
@@ -282,7 +272,6 @@ export function ImportPage() {
 
     setIsPreviewing(true)
     setError('')
-    setSuccess('')
 
     try {
       const data = await previewImport(batch.id, {
@@ -291,7 +280,7 @@ export function ImportPage() {
         authorizeDateChanges,
       })
       resetBatchState(data)
-      setSuccess(
+      showToast(
         'Vista previa actualizada. Revise los resultados antes de confirmar.',
       )
     } catch (previewError) {
@@ -313,7 +302,6 @@ export function ImportPage() {
 
     setIsConfirming(true)
     setError('')
-    setSuccess('')
 
     try {
       const data = await confirmImport(batch.id, {
@@ -325,7 +313,7 @@ export function ImportPage() {
       setValidation(data.validation)
       setResult(data.result)
       setValidationStale(false)
-      setSuccess('Importación confirmada correctamente.')
+      showToast('Importación confirmada correctamente.')
       refreshHistory()
     } catch (confirmError) {
       setError(
@@ -349,7 +337,6 @@ export function ImportPage() {
   const handleOpenBatch = async (item: ImportBatch) => {
     setOpeningBatchId(item.id)
     setError('')
-    setSuccess('')
 
     try {
       const data = await getImport(item.id)
@@ -402,13 +389,6 @@ export function ImportPage() {
         <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <XCircle className="mt-0.5 size-4 shrink-0" />
           <span>{error}</span>
-        </div>
-      )}
-
-      {success && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
-          <span>{success}</span>
         </div>
       )}
 
@@ -715,17 +695,22 @@ export function ImportPage() {
                 )}
               </div>
 
-              <div className="overflow-x-auto">
+              <div
+                role="region"
+                aria-label="Vista previa de filas, desplazable horizontalmente"
+                tabIndex={0}
+                className="scrollbar-thin max-h-[34rem] overflow-auto"
+              >
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  <thead className="sticky top-0 z-10 bg-slate-50/95 text-left text-xs font-semibold uppercase tracking-wide text-slate-700 backdrop-blur-sm">
                     <tr>
-                      <th className="px-4 py-3">Ubicación</th>
-                      <th className="px-4 py-3">NIT</th>
-                      <th className="px-4 py-3">Razón social</th>
-                      <th className="px-4 py-3">Subproceso</th>
-                      <th className="px-4 py-3">Fechas</th>
-                      <th className="px-4 py-3">Estado</th>
-                      <th className="px-4 py-3">Detalle</th>
+                      <th scope="col" className="px-4 py-3">Ubicación</th>
+                      <th scope="col" className="px-4 py-3">NIT</th>
+                      <th scope="col" className="px-4 py-3">Razón social</th>
+                      <th scope="col" className="px-4 py-3">Subproceso</th>
+                      <th scope="col" className="px-4 py-3">Fechas</th>
+                      <th scope="col" className="px-4 py-3">Estado</th>
+                      <th scope="col" className="px-4 py-3">Detalle</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -902,17 +887,22 @@ export function ImportPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div
+              role="region"
+              aria-label="Historial de importaciones, desplazable horizontalmente"
+              tabIndex={0}
+              className="scrollbar-thin max-h-[34rem] overflow-auto"
+            >
               <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-700">
+                <thead className="sticky top-0 z-10 bg-slate-50/95 text-left text-xs font-semibold uppercase tracking-wide text-slate-700 backdrop-blur-sm">
                   <tr>
-                    <th className="px-4 py-3">Archivo</th>
-                    <th className="px-4 py-3">Fecha</th>
-                    <th className="px-4 py-3">Estado</th>
-                    <th className="px-4 py-3">Filas</th>
-                    <th className="px-4 py-3">Válidas</th>
-                    <th className="px-4 py-3">Creadas</th>
-                    <th className="px-4 py-3" />
+                    <th scope="col" className="px-4 py-3">Archivo</th>
+                    <th scope="col" className="px-4 py-3">Fecha</th>
+                    <th scope="col" className="px-4 py-3">Estado</th>
+                    <th scope="col" className="px-4 py-3">Filas</th>
+                    <th scope="col" className="px-4 py-3">Válidas</th>
+                    <th scope="col" className="px-4 py-3">Creadas</th>
+                    <th scope="col" className="px-4 py-3" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">

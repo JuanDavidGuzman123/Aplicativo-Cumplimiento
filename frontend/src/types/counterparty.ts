@@ -85,12 +85,28 @@ export type CounterpartyListResponse = {
   meta: PaginationMeta
 }
 
+export const COUNTERPARTY_SORT_FIELDS = [
+  'businessName',
+  'nit',
+  'status',
+  'registrationDate',
+  'lastFollowUpDate',
+  'nextFollowUpDate',
+] as const
+
+export type CounterpartySortField =
+  (typeof COUNTERPARTY_SORT_FIELDS)[number]
+
+export type SortDirection = 'asc' | 'desc'
+
 export type CounterpartyQuery = {
   search?: string
   category?: string
   subprocessId?: string
   status?: CounterpartyStatus
   calendarStatus?: CalendarStatus
+  sort?: CounterpartySortField
+  dir?: SortDirection
   page?: number
   pageSize?: number
 }

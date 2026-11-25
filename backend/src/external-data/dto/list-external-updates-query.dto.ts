@@ -9,8 +9,14 @@ import {
   MaxLength,
   Min,
 } from 'class-validator'
-import { EXTERNAL_UPDATE_FILTERS } from '../types.js'
-import { EXTERNAL_ANNUAL_STATUSES } from '../types.js'
+import {
+  EXTERNAL_ANNUAL_STATUSES,
+  EXTERNAL_SORT_FIELDS,
+  EXTERNAL_UPDATE_FILTERS,
+  SORT_DIRECTIONS,
+  type ExternalSortField,
+  type SortDirection,
+} from '../types.js'
 
 export class ListExternalUpdatesQueryDto {
   @Transform(({ value }) =>
@@ -55,6 +61,24 @@ export class ListExternalUpdatesQueryDto {
     message: 'El filtro de seguimiento semestral no es válido',
   })
   requiresSemiannualFollowUp?: boolean
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsIn([...EXTERNAL_SORT_FIELDS], {
+    message: 'El campo de ordenamiento no es válido',
+  })
+  sort?: ExternalSortField
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsIn([...SORT_DIRECTIONS], {
+    message: 'La dirección de ordenamiento no es válida',
+  })
+  dir?: SortDirection
 
   @IsOptional()
   @Type(() => Number)

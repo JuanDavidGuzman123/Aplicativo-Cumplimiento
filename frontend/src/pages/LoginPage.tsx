@@ -64,21 +64,26 @@ export function LoginPage() {
   })
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white px-4 py-10">
-      <div className="w-full max-w-md">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      <div className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full bg-amber-200/40 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-28 -left-20 size-80 rounded-full bg-emerald-200/30 blur-3xl" />
+
+      <div className="relative w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-3">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-amber-100 text-emerald-900 shadow-sm shadow-slate-900/10">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-emerald-900 text-amber-300 shadow-lg shadow-emerald-950/20">
             <ShieldCheck className="size-6" />
           </span>
           <div>
             <h1 className="text-lg font-semibold text-slate-900">
               Seguimiento de Contrapartes
             </h1>
-            <p className="text-xs text-slate-500">Área de Cumplimiento</p>
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Área de Cumplimiento
+            </p>
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 border-t-4 border-t-amber-400 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
+        <div className="rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-slate-950/10 backdrop-blur sm:p-8">
           <h2 className="text-xl font-semibold text-slate-900">
             Iniciar sesión
           </h2>
@@ -89,7 +94,10 @@ export function LoginPage() {
 
           <form className="mt-6 space-y-4" onSubmit={submit} noValidate>
             {error && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700"
+              >
                 {error}
               </div>
             )}
@@ -102,6 +110,8 @@ export function LoginPage() {
                 id="login-email"
                 type="email"
                 autoComplete="email"
+                autoFocus
+                aria-invalid={Boolean(errors.email)}
                 className={inputClass}
                 {...register('email')}
               />
@@ -119,13 +129,14 @@ export function LoginPage() {
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
-                  className={`${inputClass} pr-10`}
+                  aria-invalid={Boolean(errors.password)}
+                  className={`${inputClass} pr-12`}
                   {...register('password')}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((value) => !value)}
-                  className="absolute inset-y-0 right-0 mt-1 flex items-center px-3 text-slate-400 transition hover:text-amber-600"
+                  className="absolute inset-y-0 right-0 mt-1 flex w-11 items-center justify-center rounded-r-lg text-slate-400 transition hover:text-amber-600"
                   aria-label={
                     showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'
                   }

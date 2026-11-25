@@ -32,7 +32,11 @@ import { normalizeNit } from '../common/utils/nit.js'
 import { PrismaService } from '../prisma/prisma.service.js'
 import { CounterpartyActionDto, ReactivateCounterpartyDto } from './dto/counterparty-action.dto.js'
 import { CreateCounterpartyDto } from './dto/create-counterparty.dto.js'
-import { ListCounterpartiesQueryDto } from './dto/list-counterparties-query.dto.js'
+import {
+  ListCounterpartiesQueryDto,
+  type CounterpartySortField,
+  type CounterpartySortDirection,
+} from './dto/list-counterparties-query.dto.js'
 import { EvaluateRiskDto } from './dto/risk-evaluation.dto.js'
 import { UpdateCounterpartyDto } from './dto/update-counterparty.dto.js'
 
@@ -88,6 +92,24 @@ const detailSelect = {
 
 type ListRow = Prisma.CounterpartyGetPayload<{ select: typeof listSelect }>
 type DetailRow = Prisma.CounterpartyGetPayload<{ select: typeof detailSelect }>
+
+function buildCounterpartyOrderBy(
+  sort: CounterpartySortField = 'status',
+  dir: CounterpartySortDirection = 'asc',
+): Prisma.CounterpartyOrderByWithRelationInput[] {
+  const orderBy: Prisma.CounterpartyOrderByWithRelationInput[] = [
+    { [sort]: dir } as Prisma.CounterpartyOrderByWithRelationInput,
+  ]
+
+  if (sort !== 'businessName') {
+    orderBy.push({ businessName: 'asc' })
+  }
+  if (sort !== 'nit') {
+    orderBy.push({ nit: 'asc' })
+  }
+
+  return orderBy
+}
 
 function serializeList(row: ListRow) {
   return {
@@ -150,11 +172,7 @@ export class CounterpartiesService {
       this.prisma.counterparty.findMany({
         where,
         select: listSelect,
-        orderBy: [
-          { status: 'asc' },
-          { businessName: 'asc' },
-          { nit: 'asc' },
-        ],
+        orderBy: buildCounterpartyOrderBy(query.sort, query.dir),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
