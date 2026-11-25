@@ -7,6 +7,7 @@ import {
 } from './annual-dates.js'
 import { AnnualNotificationsService } from '../annual-notifications/annual-notifications.service.js'
 import { AuditService } from '../audit/audit.service.js'
+import type { AnnualExternalSyncService } from './annual-external-sync.service.js'
 import {
   getBusinessToday,
   parseDateOnly,
@@ -96,15 +97,29 @@ function createService(prisma: PrismaMock) {
       .fn()
       .mockResolvedValue({ evaluated: 0, created: 0 }),
   }
+  const annualExternalSync = {
+    sync: vi.fn().mockResolvedValue({
+      source: 'proveedores',
+      sourceRows: 1,
+      created: 1,
+      updated: 0,
+      unchanged: 0,
+      skipped: 0,
+      fileName: 'FR-SG-83.xlsx',
+      error: null,
+    }),
+  }
 
   return {
     service: new AnnualUpdatesService(
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
       annualNotifications as unknown as AnnualNotificationsService,
+      annualExternalSync as unknown as AnnualExternalSyncService,
     ),
     audit,
     annualNotifications,
+    annualExternalSync,
   }
 }
 
@@ -630,5 +645,19 @@ describe('AnnualUpdatesService', () => {
     expect(preview.mappingErrors[0]).toContain(
       'código de punto de venta',
     )
+  })
+
+  it('sincroniza el libro externo y genera notificaciones para la fuente', async () => {
+    const { service, annualExternalSync, annualNotifications } =
+      createService(prisma)
+
+    const result = await service.syncExternal('proveedores')
+
+    expect(annualExternalSync.sync).toHaveBeenCalledWith('proveedores')
+    expect(annualNotifications.generateDaily).toHaveBeenCalledWith(
+      'proveedores',
+    )
+    expect(result.sync.source).toBe('proveedores')
+    expect(result.sync.created).toBe(1)
   })
 })

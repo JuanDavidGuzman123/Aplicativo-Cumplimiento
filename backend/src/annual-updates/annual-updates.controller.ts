@@ -54,6 +54,14 @@ export class AnnualUpdatesController {
     )
   }
 
+  @Post('sync')
+  @Roles(UserRole.ADMIN)
+  syncExternal(@Query('source') source?: string) {
+    return this.annualUpdatesService.syncExternal(
+      this.resolveSource(source),
+    )
+  }
+
   @Post('import/preview')
   @Roles(UserRole.ADMIN)
   @UseInterceptors(

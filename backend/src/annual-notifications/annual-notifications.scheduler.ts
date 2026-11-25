@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config'
 import { SchedulerRegistry } from '@nestjs/schedule'
 import { CronJob } from 'cron'
+import { AnnualExternalSyncService } from '../annual-updates/annual-external-sync.service.js'
 import { AnnualNotificationsService } from './annual-notifications.service.js'
 
 @Injectable()
@@ -19,6 +20,7 @@ export class AnnualNotificationsScheduler
 
   constructor(
     private readonly annualNotificationsService: AnnualNotificationsService,
+    private readonly annualExternalSyncService: AnnualExternalSyncService,
     private readonly config: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
   ) {}
@@ -41,14 +43,12 @@ export class AnnualNotificationsScheduler
     const job = new CronJob(
       expression,
       () => {
-        void this.annualNotificationsService
-          .generateAllDaily()
-          .catch((error: unknown) => {
-            this.logger.error(
-              'No fue posible generar las notificaciones anuales diarias',
-              error instanceof Error ? error.stack : undefined,
-            )
-          })
+        void this.syncAndGenerate().catch((error: unknown) => {
+          this.logger.error(
+            'No fue posible sincronizar y generar las notificaciones anuales diarias',
+            error instanceof Error ? error.stack : undefined,
+          )
+        })
       },
       null,
       false,
@@ -64,19 +64,33 @@ export class AnnualNotificationsScheduler
 
   async onApplicationBootstrap() {
     try {
-      const result =
-        await this.annualNotificationsService.generateAllDaily()
-
-      if (result.created > 0) {
-        this.logger.log(
-          `Generación inicial anual: ${result.created} notificaciones nuevas`,
-        )
-      }
+      await this.syncAndGenerate()
     } catch (error) {
       this.logger.error(
-        'No fue posible generar las notificaciones anuales iniciales',
+        'No fue posible sincronizar y generar las notificaciones anuales iniciales',
         error instanceof Error ? error.stack : undefined,
       )
     }
+  }
+
+  private async syncAndGenerate() {
+    const sync = await this.annualExternalSyncService.syncAll()
+
+    if (sync.created + sync.updated > 0) {
+      this.logger.log(
+        `Sincronización inicial anual: ${sync.created} nuevas, ${sync.updated} actualizadas`,
+      )
+    }
+
+    const result =
+      await this.annualNotificationsService.generateAllDaily()
+
+    if (result.created > 0) {
+      this.logger.log(
+        `Generación inicial anual: ${result.created} notificaciones nuevas`,
+      )
+    }
+
+    return { sync, result }
   }
 }

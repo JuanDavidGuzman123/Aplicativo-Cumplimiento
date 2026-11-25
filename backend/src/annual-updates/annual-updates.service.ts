@@ -6,6 +6,7 @@ import {
 import { AnnualStatus, Prisma } from '@prisma/client'
 import { AnnualNotificationsService } from '../annual-notifications/annual-notifications.service.js'
 import { AuditService } from '../audit/audit.service.js'
+import { AnnualExternalSyncService } from './annual-external-sync.service.js'
 import {
   getBusinessToday,
   parseDateOnly,
@@ -349,7 +350,27 @@ export class AnnualUpdatesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly annualNotifications: AnnualNotificationsService,
+    private readonly annualExternalSync: AnnualExternalSyncService,
   ) {}
+
+  async syncExternal(source: AnnualSource = DEFAULT_ANNUAL_SOURCE) {
+    const sync = await this.annualExternalSync.sync(source)
+
+    let notifications = { evaluated: 0, created: 0 }
+
+    try {
+      notifications = await this.annualNotifications.generateDaily(
+        source,
+      )
+    } catch (error) {
+      this.logger.error(
+        'No fue posible generar las notificaciones anuales tras la sincronización externa',
+        error instanceof Error ? error.stack : undefined,
+      )
+    }
+
+    return { sync, notifications }
+  }
 
   async getSummary(
     source: AnnualSource = DEFAULT_ANNUAL_SOURCE,
